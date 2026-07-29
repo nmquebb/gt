@@ -1,12 +1,11 @@
 "use client";
 
-import { createCheckoutClient } from "@checkout/sdk";
+import { createCheckoutClient, formatUsd } from "@checkout/sdk";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { BuyNowButton } from "@/components/buy-now-button";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
-import { formatUsd } from "@/lib/format";
 import { listingsQueryOptions } from "@/lib/query-client";
 
 const apiUrl = "http://127.0.0.1:3000";

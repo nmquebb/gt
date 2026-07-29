@@ -51,9 +51,9 @@ describe("checkout query cache", () => {
     const current = stateAtRevision(2);
     applyCheckoutState(queryClient, sessionId, current);
 
-    expect(
-      applyCheckoutState(queryClient, sessionId, stateAtRevision(1)),
-    ).toBe("ignored");
+    expect(applyCheckoutState(queryClient, sessionId, stateAtRevision(1))).toBe(
+      "ignored",
+    );
     expect(getCheckoutState(queryClient, sessionId)).toBe(current);
   });
 
@@ -87,11 +87,11 @@ describe("checkout query cache", () => {
     const queryClient = new QueryClient();
     applyCheckoutState(queryClient, sessionId, stateAtRevision(1));
 
-    expect(
-      applyCheckoutState(queryClient, sessionId, stateAtRevision(2)),
-    ).toBe("state_applied");
-    expect(getCheckoutState(queryClient, sessionId)?.snapshot.session.revision).toBe(
-      2,
+    expect(applyCheckoutState(queryClient, sessionId, stateAtRevision(2))).toBe(
+      "state_applied",
     );
+    expect(
+      getCheckoutState(queryClient, sessionId)?.snapshot.session.revision,
+    ).toBe(2);
   });
 });

@@ -125,10 +125,7 @@ test("continues one checkout across the prototype workflows", async ({
       `${apiUrl}/v1/checkout-sessions/${sessionId}`,
       { headers: auth },
     );
-    const readySnapshot = await decode(
-      afterWebLeave,
-      CheckoutSnapshotSchema,
-    );
+    const readySnapshot = await decode(afterWebLeave, CheckoutSnapshotSchema);
     expect(readySnapshot.status).toBe("ready");
 
     await page.goto(checkoutUrl.toString());
@@ -176,10 +173,7 @@ test("continues one checkout across the prototype workflows", async ({
       `${apiUrl}/v1/checkout-sessions/${sessionId}`,
       { headers: auth },
     );
-    const completed = await decode(
-      completedResponse,
-      CheckoutSnapshotSchema,
-    );
+    const completed = await decode(completedResponse, CheckoutSnapshotSchema);
     expect(completed.session.order?.id).toMatch(/^ord_/);
 
     const activityResponse = await request.get(
