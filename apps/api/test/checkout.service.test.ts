@@ -5,6 +5,7 @@ import { DelayedPaymentSimulator } from "../src/providers/payment-simulator";
 import { RealtimeHub } from "../src/providers/realtime-hub";
 import {
   CheckoutSessionExpired,
+  InvalidResumeToken,
   OfferVersionMismatch,
 } from "../src/services/checkout/checkout.errors";
 import { CheckoutService } from "../src/services/checkout/checkout.service";
@@ -216,6 +217,28 @@ test("fails then retries a payment", async () => {
   expect(completed.snapshot.status).toBe("completed");
   expect(repository.listAttempts(sessionId)).toHaveLength(2);
   expect(repository.listOrders(sessionId)).toHaveLength(1);
+});
+
+test("invalid developer credentials cannot configure a payment outcome", async () => {
+  const { payment, service } = setup();
+  const created = await createCheckout(service);
+  const sessionId = created.snapshot.session.id;
+
+  expect(
+    service.setNextPaymentOutcome({
+      sessionId,
+      resumeToken: "wrong-token",
+      outcome: "failure",
+    }),
+  ).rejects.toBeInstanceOf(InvalidResumeToken);
+  expect(
+    await payment.authorize({
+      sessionId,
+      attemptId: "attempt_after_rejection",
+      amountCents: 12_500,
+      currency: "USD",
+    }),
+  ).toBe("success");
 });
 
 test("concurrent purchases create one attempt and one order", async () => {

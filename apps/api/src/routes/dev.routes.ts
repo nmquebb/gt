@@ -110,14 +110,11 @@ export function createDevRoutes(dependencies: AppDependencies) {
           return resumeToken;
         }
         const sessionId = context.req.valid("param").sessionId;
-        await dependencies.checkoutService.getSession({
+        await dependencies.checkoutService.setNextPaymentOutcome({
           sessionId,
           resumeToken,
+          outcome: context.req.valid("json").outcome,
         });
-        dependencies.paymentScenarios.setNextOutcome(
-          sessionId,
-          context.req.valid("json").outcome,
-        );
 
         return context.json(null, 200);
       },

@@ -76,6 +76,10 @@ export interface PurchaseInput
   idempotencyKey: string;
 }
 
+export interface SetNextPaymentOutcomeInput extends AuthenticatedSessionInput {
+  outcome: PaymentOutcome;
+}
+
 export type PurchaseOutput = PurchaseResponse;
 
 interface Mutation<T> {
@@ -467,6 +471,16 @@ export class CheckoutService {
       const expired = this.expire(session, listing, now);
       return { value: expired.snapshot, updates: [expired.update] };
     });
+  }
+
+  async setNextPaymentOutcome(
+    input: SetNextPaymentOutcomeInput,
+  ): Promise<void> {
+    await this.withSession(input.sessionId, ({ session }) => {
+      this.authenticate(session, input.resumeToken);
+      return { value: undefined };
+    });
+    this.payment.setNextOutcome(input.sessionId, input.outcome);
   }
 
   async purchase(input: PurchaseInput): Promise<PurchaseOutput> {
