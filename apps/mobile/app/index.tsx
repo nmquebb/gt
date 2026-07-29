@@ -1,6 +1,6 @@
 import { Text, View } from "react-native";
-import { ScreenShell } from "../src/screen-shell";
-import { styles } from "../src/theme";
+import { ScreenShell } from "@/components/screen-shell";
+import { styles } from "@/theme/styles";
 
 export default function HomeScreen() {
   return (

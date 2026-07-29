@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
-import appConfig from "../app.json";
-import { createCheckoutLinks } from "../../api/src/http/links";
+import appConfig from "../../app.json";
+import { createCheckoutLinks } from "../../../api/src/http/links";
 
 test("the mobile app registers the scheme emitted by checkout links", () => {
   const deepLink = createCheckoutLinks("chk_1", "secret").deepLink;

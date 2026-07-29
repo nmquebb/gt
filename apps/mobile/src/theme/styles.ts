@@ -1,40 +1,5 @@
 import { StyleSheet } from "react-native";
-
-export const theme = {
-  color: {
-    accent: "#0a0a0a",
-    border: "#e5e5e5",
-    canvas: "#f5f5f5",
-    danger: "#b91c1c",
-    dangerBackground: "#fef2f2",
-    dangerBorder: "#fecaca",
-    info: "#0369a1",
-    infoBackground: "#f0f9ff",
-    infoBorder: "#bae6fd",
-    muted: "#737373",
-    neutralBackground: "#f5f5f5",
-    neutralBorder: "#d4d4d4",
-    panel: "#ffffff",
-    success: "#047857",
-    successBackground: "#ecfdf5",
-    successBorder: "#a7f3d0",
-    text: "#171717",
-    warning: "#b45309",
-    warningBackground: "#fffbeb",
-    warningBorder: "#fde68a",
-  },
-  radius: {
-    card: 8,
-    control: 6,
-  },
-  space: {
-    large: 24,
-    medium: 16,
-    small: 8,
-    xlarge: 32,
-    xsmall: 4,
-  },
-} as const;
+import { theme } from "./tokens";
 
 export const styles = StyleSheet.create({
   actionCard: {

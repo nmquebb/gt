@@ -1,7 +1,7 @@
 import { remainingHoldMs, type ClockAnchor } from "@checkout/sdk";
 import { useEffect, useState } from "react";
 import { Text, View } from "react-native";
-import { styles } from "./theme";
+import { styles } from "@/theme/styles";
 
 function formatRemaining(remainingMs: number): string {
   const remainingSeconds = Math.ceil(remainingMs / 1_000);

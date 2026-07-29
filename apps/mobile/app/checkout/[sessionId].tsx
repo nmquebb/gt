@@ -12,9 +12,9 @@ import {
   type CheckoutRouteContext,
 } from "../../src/checkout-route";
 import { CheckoutScreen } from "../../src/checkout-screen";
-import { getMobileDeviceId } from "../../src/device-id";
-import { ScreenShell } from "../../src/screen-shell";
-import { styles } from "../../src/theme";
+import { getMobileDeviceId } from "@/lib/device-id";
+import { ScreenShell } from "@/components/screen-shell";
+import { styles } from "@/theme/styles";
 
 const apiUrl = "http://127.0.0.1:3000";
 

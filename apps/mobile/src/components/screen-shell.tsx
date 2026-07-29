@@ -1,6 +1,6 @@
 import type { PropsWithChildren } from "react";
 import { ScrollView, View } from "react-native";
-import { styles } from "./theme";
+import { styles } from "@/theme/styles";
 
 export function ScreenShell({ children }: PropsWithChildren) {
   return (

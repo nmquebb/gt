@@ -24,8 +24,8 @@ import {
   type CheckoutStatusTone,
 } from "./checkout-presentation";
 import { HoldCountdown } from "./hold-countdown";
-import { ScreenShell } from "./screen-shell";
-import { styles } from "./theme";
+import { ScreenShell } from "@/components/screen-shell";
+import { styles } from "@/theme/styles";
 
 type CheckoutScreenClient = Pick<
   CheckoutClient,
