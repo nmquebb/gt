@@ -191,11 +191,17 @@ Internal mutations use one small shape:
 ```ts
 interface Mutation<T> {
   value: T;
-  events?: readonly CheckoutUpdate[];
+  updates?: readonly CheckoutUpdate[];
 }
 ```
 
 Expected errors are thrown. They are not embedded in this shape.
+
+When a mutation changes state before reporting an expected error—for example,
+discovering and persisting expiration during offer acceptance—the typed error
+may carry the resulting checkout updates. The lock wrapper catches it,
+releases the lock, publishes those updates, and rethrows it for HTTP
+translation.
 
 Purchase start uses a discriminated result that clearly says whether the
 request is already resolved or requires delayed authorization. Authorization
