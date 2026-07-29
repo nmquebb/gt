@@ -2,8 +2,12 @@
   "expo": {
     "name": "Gametime Checkout",
     "slug": "gametime-checkout",
+    "scheme": "gametime",
     "experiments": {
       "typedRoutes": true
+    },
+    "ios": {
+      "bundleIdentifier": "com.nmquebb.gametime-checkout"
     }
   }
 }
