@@ -1,6 +1,7 @@
 export * from "./clients/client.errors";
 export * from "./clients/checkout.client";
 export * from "./clients/clock-anchor";
+export * from "./cache/checkout-cache";
 export * from "./presentation/checkout-copy";
 export * from "./realtime/checkout-subscription";
 export * from "./react/checkout-provider";
