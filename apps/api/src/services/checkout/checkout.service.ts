@@ -141,7 +141,6 @@ export class CheckoutService {
     input: CreateCheckoutSessionRequest,
   ): Promise<CreatedCheckout> {
     await this.reconcileExpiredListing(input.listingId);
-    let updatesOnError: readonly CheckoutUpdate[] = [];
     try {
       const mutation = await this.locks.withKeys(
         [`checkout-owner:${input.deviceId}`],
@@ -187,8 +186,10 @@ export class CheckoutService {
                 (currentListing.status !== "available" &&
                   currentListing.heldBySessionId !== currentPrior?.id)
               ) {
-                updatesOnError = expired ? [expired.update] : [];
-                throw new ListingUnavailable(input.listingId);
+                throw new ListingUnavailable(
+                  input.listingId,
+                  expired ? [expired.update] : [],
+                );
               }
 
               const superseded =
@@ -206,8 +207,10 @@ export class CheckoutService {
                 !availableListing ||
                 availableListing.status !== "available"
               ) {
-                updatesOnError = expired ? [expired.update] : [];
-                throw new ListingUnavailable(input.listingId);
+                throw new ListingUnavailable(
+                  input.listingId,
+                  expired ? [expired.update] : [],
+                );
               }
 
               const session = this.createRecord(availableListing, input, now);
@@ -250,9 +253,7 @@ export class CheckoutService {
       return mutation.value;
     } catch (error) {
       if (error instanceof CheckoutError) {
-        this.publishUpdates(
-          error.updates.length > 0 ? error.updates : updatesOnError,
-        );
+        this.publishUpdates(error.updates);
       }
       throw error;
     }

@@ -10,14 +10,12 @@ import { createCheckoutRoutes } from "./routes/checkout.routes";
 import { createDevRoutes } from "./routes/dev.routes";
 import { createRealtimeRoutes } from "./routes/realtime.routes";
 import type { IosSimulatorLauncher } from "./providers/ios-simulator-launcher";
-import type { DelayedPaymentSimulator } from "./providers/payment-simulator";
 import type { RealtimeHub } from "./providers/realtime-hub";
 import type { CheckoutService } from "./services/checkout/checkout.service";
 
 export interface AppDependencies {
   checkoutService: CheckoutService;
   realtimeHub: RealtimeHub;
-  paymentScenarios: DelayedPaymentSimulator;
   iosSimulatorLauncher: IosSimulatorLauncher;
 }
 

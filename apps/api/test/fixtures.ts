@@ -111,7 +111,6 @@ export function createApiTestHarness({
   const appDependencies: AppDependencies = {
     checkoutService: checkout,
     realtimeHub,
-    paymentScenarios: payment,
     iosSimulatorLauncher,
   };
 
@@ -123,7 +122,6 @@ export function createApiTestHarness({
     activity,
     payment:
       payment instanceof ControlledPaymentSimulator ? payment : undefined,
-    paymentScenarios: payment,
     createCheckout,
     appDependencies,
     nextPaymentOutcomes,

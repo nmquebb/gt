@@ -19,8 +19,11 @@ export class CheckoutError extends Error {
 }
 
 export class ListingUnavailable extends CheckoutError {
-  constructor(readonly listingId: string) {
-    super("Listing unavailable");
+  constructor(
+    readonly listingId: string,
+    updates: readonly CheckoutUpdate[] = [],
+  ) {
+    super("Listing unavailable", updates);
   }
 }
 

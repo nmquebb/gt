@@ -6,6 +6,7 @@ import { RealtimeHub } from "../src/providers/realtime-hub";
 import {
   CheckoutSessionExpired,
   InvalidResumeToken,
+  ListingUnavailable,
   OfferVersionMismatch,
 } from "../src/services/checkout/checkout.errors";
 import { CheckoutService } from "../src/services/checkout/checkout.service";
@@ -190,6 +191,44 @@ test("expires from authoritative server time when rejecting a command", async ()
   });
 });
 
+test("publishes persisted updates through listing-unavailable errors", async () => {
+  const { realtime, repository, service, setNow } = setup();
+  const created = await createCheckout(service);
+  const sessionId = created.snapshot.session.id;
+  const messages: string[] = [];
+  realtime.register(sessionId, {
+    send(message): void {
+      messages.push(String(message));
+    },
+  });
+  setNow("2026-07-29T17:01:30.001Z");
+
+  const failure: unknown = await service
+    .createSession({
+      listingId: "lst_missing",
+      surface: "web",
+      deviceId: "web_1",
+    })
+    .catch((error: unknown) => error);
+
+  expect(failure).toBeInstanceOf(ListingUnavailable);
+  if (!(failure instanceof ListingUnavailable)) {
+    throw failure;
+  }
+  expect(failure.updates).toEqual([
+    {
+      cause: "expired",
+      snapshot: expect.objectContaining({ status: "expired" }),
+    },
+  ]);
+  expect(repository.getSession(sessionId)?.phase).toBe("expired");
+  expect(messages).toHaveLength(1);
+  expect(JSON.parse(messages[0] ?? "{}")).toMatchObject({
+    cause: "expired",
+    snapshot: { status: "expired" },
+  });
+});
+
 test("fails then retries a payment", async () => {
   const { payment, repository, service } = setup();
   const created = await createCheckout(service);
@@ -224,7 +263,8 @@ test("invalid developer credentials cannot configure a payment outcome", async (
   const created = await createCheckout(service);
   const sessionId = created.snapshot.session.id;
 
-  expect(
+  // oxlint-disable-next-line typescript/await-thenable -- Bun requires awaiting async matchers despite their non-thenable type.
+  await expect(
     service.setNextPaymentOutcome({
       sessionId,
       resumeToken: "wrong-token",

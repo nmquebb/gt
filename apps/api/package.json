@@ -2,9 +2,6 @@
   "name": "@checkout/api",
   "private": true,
   "type": "module",
-  "exports": {
-    "./app-type": "./src/app.ts"
-  },
   "scripts": {
     "dev": "bun --hot src/server.ts",
     "start": "bun src/server.ts",

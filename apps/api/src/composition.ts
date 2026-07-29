@@ -22,7 +22,6 @@ export function createAppDependencies(): AppDependencies {
   return {
     checkoutService,
     realtimeHub,
-    paymentScenarios: payment,
     iosSimulatorLauncher: new BunIosSimulatorLauncher(),
   };
 }
