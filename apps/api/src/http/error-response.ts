@@ -1,7 +1,5 @@
 import type { ApiError } from "@checkout/sdk/contracts";
-import { Result, type Result as ResultType } from "better-result";
 import type { Context } from "hono";
-import type { ContentfulStatusCode } from "hono/utils/http-status";
 import {
   CheckoutSessionExpired,
   CheckoutSessionNotFound,
@@ -101,19 +99,4 @@ export function respondWithError(context: Context, response: HttpError) {
   const { status, ...body } = response;
 
   return context.json(body, status);
-}
-
-export function serviceResponse<T, TOutput = T>(
-  context: Context,
-  result: ResultType<T, unknown>,
-  status: ContentfulStatusCode | ((value: T) => ContentfulStatusCode) = 200,
-  project: (value: T) => TOutput = (value) => value as unknown as TOutput,
-) {
-  if (Result.isError(result)) {
-    return respondWithError(context, toHttpError(result.error));
-  }
-  const responseStatus =
-    typeof status === "function" ? status(result.value) : status;
-
-  return context.json(project(result.value), responseStatus);
 }

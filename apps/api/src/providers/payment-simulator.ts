@@ -1,4 +1,3 @@
-import { Result, type Result as ResultType } from "better-result";
 import type { PaymentOutcome } from "@checkout/sdk/contracts";
 
 export interface PaymentInput {
@@ -7,8 +6,6 @@ export interface PaymentInput {
   amountCents: number;
   currency: "USD";
 }
-
-export type PaymentAuthorization = ResultType<void, "failure">;
 
 export interface DelayedPaymentSimulatorOptions {
   delayMs?: number;
@@ -32,20 +29,10 @@ export class DelayedPaymentSimulator {
     this.outcomes.set(sessionId, outcome);
   }
 
-  async authorize(input: PaymentInput): Promise<PaymentAuthorization> {
+  async authorize(input: PaymentInput): Promise<PaymentOutcome> {
     const outcome = this.outcomes.get(input.sessionId) ?? "success";
     this.outcomes.delete(input.sessionId);
-
-    const timer = await Result.tryPromise({
-      try: () => wait(this.delayMs),
-      catch: () => "failure" as const,
-    });
-    if (Result.isError(timer)) {
-      return Result.err(timer.error);
-    }
-
-    return outcome === "success"
-      ? Result.ok(undefined)
-      : Result.err("failure" as const);
+    await wait(this.delayMs);
+    return outcome;
   }
 }

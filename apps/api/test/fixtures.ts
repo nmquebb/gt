@@ -1,11 +1,9 @@
-import { Result } from "better-result";
 import type { PaymentOutcome } from "@checkout/sdk/contracts";
 import type { IosSimulatorLauncher } from "../src/providers/ios-simulator-launcher";
 import { InMemoryKeyedLock } from "../src/providers/keyed-lock";
 import { CheckoutMemoryRepository } from "../src/providers/memory-checkout-repository";
 import {
   DelayedPaymentSimulator,
-  type PaymentAuthorization,
   type PaymentInput,
 } from "../src/providers/payment-simulator";
 import { RealtimeHub } from "../src/providers/realtime-hub";
@@ -45,17 +43,13 @@ class ControlledPaymentSimulator extends TrackingPaymentSimulator {
   private authorizationStarted = Promise.withResolvers<void>();
   private authorization = Promise.withResolvers<PaymentOutcome>();
 
-  override async authorize(
-    _input: PaymentInput,
-  ): Promise<PaymentAuthorization> {
+  override async authorize(_input: PaymentInput): Promise<PaymentOutcome> {
     this.authorizationStarted.resolve();
     const outcome = await this.authorization.promise;
     this.authorizationStarted = Promise.withResolvers<void>();
     this.authorization = Promise.withResolvers<PaymentOutcome>();
 
-    return outcome === "success"
-      ? Result.ok(undefined)
-      : Result.err("failure" as const);
+    return outcome;
   }
 
   waitUntilAuthorizationStarts(): Promise<void> {
@@ -97,7 +91,7 @@ export function createApiTestHarness({
     open(deepLink) {
       openedDeepLinks.push(deepLink);
 
-      return Promise.resolve(Result.ok(undefined));
+      return Promise.resolve();
     },
   };
   const activity = {
@@ -107,16 +101,11 @@ export function createApiTestHarness({
   };
 
   async function createCheckout() {
-    const result = await checkout.createSession({
+    return checkout.createSession({
       listingId: "lst_101_a_1",
       surface: "web",
       deviceId: "web_1",
     });
-    if (Result.isError(result)) {
-      throw new Error("test fixture could not create checkout");
-    }
-
-    return result.value;
   }
 
   const appDependencies: AppDependencies = {

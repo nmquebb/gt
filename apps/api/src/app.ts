@@ -4,7 +4,6 @@ import { HTTPException } from "hono/http-exception";
 import {
   invalidRequest,
   respondWithError,
-  serviceResponse,
   toHttpError,
 } from "./http/error-response";
 import { createCheckoutRoutes } from "./routes/checkout.routes";
@@ -41,10 +40,7 @@ export function createRestApp(dependencies: AppDependencies) {
     .use("*", cors())
     .get("/v1/health", (context) => context.json({ status: "ok" }))
     .get("/v1/listings", async (context) =>
-      serviceResponse(
-        context,
-        await dependencies.checkoutService.listListings(),
-      ),
+      context.json(await dependencies.checkoutService.listListings()),
     )
     .route("/v1", createCheckoutRoutes(dependencies))
     .route("/v1", createDevRoutes(dependencies))

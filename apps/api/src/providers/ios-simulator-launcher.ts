@@ -1,37 +1,27 @@
-import { Result, type Result as ResultType } from "better-result";
-
 export class SimulatorLaunchFailure extends Error {}
 
 export interface IosSimulatorLauncher {
-  open(deepLink: string): Promise<ResultType<void, SimulatorLaunchFailure>>;
+  open(deepLink: string): Promise<void>;
 }
 
 export class BunIosSimulatorLauncher implements IosSimulatorLauncher {
-  async open(
-    deepLink: string,
-  ): Promise<ResultType<void, SimulatorLaunchFailure>> {
-    const spawned = await Result.tryPromise({
-      try: async () =>
-        Bun.spawn(["bunx", "uri-scheme", "open", deepLink, "--ios"], {
+  async open(deepLink: string): Promise<void> {
+    try {
+      const spawned = Bun.spawn(
+        ["bunx", "uri-scheme", "open", deepLink, "--ios"],
+        {
           stdout: "pipe",
           stderr: "pipe",
-        }),
-      catch: () => new SimulatorLaunchFailure(),
-    });
-    if (Result.isError(spawned)) {
-      return Result.err(spawned.error);
-    }
-
-    const exited = await Result.tryPromise({
-      try: () => spawned.value.exited,
-      catch: () => new SimulatorLaunchFailure(),
-    });
-    if (Result.isError(exited) || exited.value !== 0) {
-      return Result.err(
-        Result.isError(exited) ? exited.error : new SimulatorLaunchFailure(),
+        },
       );
+      if ((await spawned.exited) !== 0) {
+        throw new SimulatorLaunchFailure();
+      }
+    } catch (error) {
+      if (error instanceof SimulatorLaunchFailure) {
+        throw error;
+      }
+      throw new SimulatorLaunchFailure();
     }
-
-    return Result.ok(undefined);
   }
 }

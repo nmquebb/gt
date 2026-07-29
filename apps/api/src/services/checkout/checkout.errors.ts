@@ -1,45 +1,64 @@
-import { TaggedError } from "better-result";
-import type { CheckoutSnapshot } from "@checkout/sdk/contracts";
+import type {
+  CheckoutSessionUpdatedCause,
+  CheckoutSnapshot,
+} from "@checkout/sdk/contracts";
 
-export class ListingUnavailable extends TaggedError("ListingUnavailable")<{
-  listingId: string;
-}>() {}
-
-export class CheckoutSessionNotFound extends TaggedError(
-  "CheckoutSessionNotFound",
-)<{
-  sessionId: string;
-}>() {}
-
-export class InvalidResumeToken extends TaggedError(
-  "InvalidResumeToken",
-)<{}>() {}
-
-export class InvalidPriceAdjustment extends TaggedError(
-  "InvalidPriceAdjustment",
-)<{}>() {}
-
-export interface SnapshotConflict extends Record<string, unknown> {
+export interface CheckoutUpdate {
+  cause: CheckoutSessionUpdatedCause;
   snapshot: CheckoutSnapshot;
 }
 
-export class CheckoutSessionExpired extends TaggedError(
-  "CheckoutSessionExpired",
-)<SnapshotConflict>() {}
+export class CheckoutError extends Error {
+  constructor(
+    message: string,
+    readonly updates: readonly CheckoutUpdate[] = [],
+  ) {
+    super(message);
+    this.name = new.target.name;
+  }
+}
 
-export class OfferVersionMismatch extends TaggedError(
-  "OfferVersionMismatch",
-)<SnapshotConflict>() {}
+export class ListingUnavailable extends CheckoutError {
+  constructor(readonly listingId: string) {
+    super("Listing unavailable");
+  }
+}
 
-export class PurchaseNotAllowed extends TaggedError(
-  "PurchaseNotAllowed",
-)<SnapshotConflict>() {}
+export class CheckoutSessionNotFound extends CheckoutError {
+  constructor(readonly sessionId: string) {
+    super("Checkout session not found");
+  }
+}
 
-export type CheckoutError =
-  | ListingUnavailable
-  | CheckoutSessionNotFound
-  | InvalidResumeToken
-  | InvalidPriceAdjustment
-  | CheckoutSessionExpired
-  | OfferVersionMismatch
-  | PurchaseNotAllowed;
+export class InvalidResumeToken extends CheckoutError {
+  constructor() {
+    super("Invalid resume token");
+  }
+}
+
+export class InvalidPriceAdjustment extends CheckoutError {
+  constructor() {
+    super("Invalid price adjustment");
+  }
+}
+
+export class CheckoutSessionExpired extends CheckoutError {
+  constructor(
+    readonly snapshot: CheckoutSnapshot,
+    updates: readonly CheckoutUpdate[] = [],
+  ) {
+    super("Checkout session expired", updates);
+  }
+}
+
+export class OfferVersionMismatch extends CheckoutError {
+  constructor(readonly snapshot: CheckoutSnapshot) {
+    super("Offer version mismatch");
+  }
+}
+
+export class PurchaseNotAllowed extends CheckoutError {
+  constructor(readonly snapshot: CheckoutSnapshot) {
+    super("Purchase not allowed");
+  }
+}

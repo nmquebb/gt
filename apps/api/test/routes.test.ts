@@ -144,13 +144,18 @@ describe("checkout routes", () => {
     expect(unsupportedBody.code).toBe("REST_RESOURCE_NOT_FOUND");
   });
 
-  test("sanitizes unexpected provider failures in a direct 500 error", async () => {
+  test("sanitizes unexpected launcher failures in a direct 500 error", async () => {
     const harness = createApiTestHarness();
-    harness.checkout.listListings = async () => {
-      throw new Error("provider credential should not be exposed");
+    const created = await harness.createCheckout();
+    harness.appDependencies.iosSimulatorLauncher.open = async () => {
+      throw new Error("launcher detail should not be exposed");
     };
     const response = await createApp(harness.appDependencies).request(
-      "/v1/listings",
+      `/v1/dev/checkout-sessions/${created.snapshot.session.id}/open-ios-simulator`,
+      {
+        method: "POST",
+        headers: { authorization: `Bearer ${created.resumeToken}` },
+      },
     );
     const body = await response.json();
 
@@ -160,6 +165,11 @@ describe("checkout routes", () => {
       code: "INTERNAL_SERVER_ERROR",
       message: "The server could not complete the request.",
     });
+    expect(
+      harness.activity
+        .list(created.snapshot.session.id)
+        .some((entry) => entry.type === "app_handoff_opened"),
+    ).toBe(false);
   });
 
   test("rejects an invalid create request and reports a listing conflict", async () => {
@@ -262,6 +272,7 @@ describe("checkout routes", () => {
     const created = await harness.createCheckout();
     await harness.checkout.reprice({
       sessionId: created.snapshot.session.id,
+      resumeToken: created.resumeToken,
       increaseCents: 500,
     });
     const app = createApp(harness.appDependencies);
@@ -357,6 +368,7 @@ describe("checkout routes", () => {
     const conflicted = await conflictHarness.createCheckout();
     await conflictHarness.checkout.reprice({
       sessionId: conflicted.snapshot.session.id,
+      resumeToken: conflicted.resumeToken,
       increaseCents: 500,
     });
     const conflict = await requestJson(
@@ -571,6 +583,30 @@ describe("development checkout routes", () => {
     );
 
     expect(response.status).toBe(404);
+  });
+
+  test("does not launch iOS simulator for invalid checkout authentication", async () => {
+    const harness = createApiTestHarness();
+    const created = await harness.createCheckout();
+    const app = createApp(harness.appDependencies);
+    const invalidCredential = await app.request(
+      `/v1/dev/checkout-sessions/${created.snapshot.session.id}/open-ios-simulator`,
+      {
+        method: "POST",
+        headers: { authorization: "Bearer wrong-token" },
+      },
+    );
+    const missingSession = await app.request(
+      "/v1/dev/checkout-sessions/chk_missing/open-ios-simulator",
+      {
+        method: "POST",
+        headers: { authorization: `Bearer ${created.resumeToken}` },
+      },
+    );
+
+    expect(invalidCredential.status).toBe(401);
+    expect(missingSession.status).toBe(404);
+    expect(harness.openedDeepLinks).toHaveLength(0);
   });
 
   test("launches only the server-constructed trusted iOS deep link", async () => {

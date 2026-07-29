@@ -15,7 +15,6 @@ import {
   invalidIdempotencyKey,
   invalidRequest,
   respondWithError,
-  serviceResponse,
   unauthorizedSession,
 } from "../http/error-response";
 import { createCheckoutLinks } from "../http/links";
@@ -41,18 +40,21 @@ export function createCheckoutRoutes(dependencies: AppDependencies) {
       "/checkout-sessions",
       zValidator("json", CreateCheckoutSessionRequestSchema, invalid),
       async (context) => {
-        const result = await dependencies.checkoutService.createSession(
+        const created = await dependencies.checkoutService.createSession(
           context.req.valid("json"),
         );
 
-        return serviceResponse(context, result, 201, (created) => ({
-          snapshot: created.snapshot,
-          resumeToken: created.resumeToken,
-          links: createCheckoutLinks(
-            created.snapshot.session.id,
-            created.resumeToken,
-          ),
-        }));
+        return context.json(
+          {
+            snapshot: created.snapshot,
+            resumeToken: created.resumeToken,
+            links: createCheckoutLinks(
+              created.snapshot.session.id,
+              created.resumeToken,
+            ),
+          },
+          201,
+        );
       },
     )
     .get(
@@ -63,14 +65,12 @@ export function createCheckoutRoutes(dependencies: AppDependencies) {
         if (resumeToken === undefined) {
           return respondWithError(context, unauthorizedSession());
         }
-        const result = await dependencies.checkoutService.getSession({
+        const snapshot = await dependencies.checkoutService.getSession({
           sessionId: context.req.valid("param").sessionId,
           resumeToken,
         });
 
-        return serviceResponse(context, result, 200, (snapshot) => ({
-          snapshot,
-        }));
+        return context.json({ snapshot });
       },
     )
     .delete(
@@ -84,16 +84,14 @@ export function createCheckoutRoutes(dependencies: AppDependencies) {
         }
         const params = context.req.valid("param");
         const body = context.req.valid("json");
-        const result = await dependencies.checkoutService.leave({
+        const snapshot = await dependencies.checkoutService.leave({
           sessionId: params.sessionId,
           resumeToken,
           surface: body.surface,
           deviceId: body.deviceId,
         });
 
-        return serviceResponse(context, result, 200, (snapshot) => ({
-          snapshot,
-        }));
+        return context.json({ snapshot });
       },
     )
     .put(
@@ -107,16 +105,14 @@ export function createCheckoutRoutes(dependencies: AppDependencies) {
         }
         const params = context.req.valid("param");
         const body = context.req.valid("json");
-        const result = await dependencies.checkoutService.resume({
+        const snapshot = await dependencies.checkoutService.resume({
           sessionId: params.sessionId,
           deviceId: params.deviceId,
           surface: body.surface,
           resumeToken,
         });
 
-        return serviceResponse(context, result, 200, (snapshot) => ({
-          snapshot,
-        }));
+        return context.json({ snapshot });
       },
     )
     .put(
@@ -130,7 +126,7 @@ export function createCheckoutRoutes(dependencies: AppDependencies) {
         }
         const params = context.req.valid("param");
         const body = context.req.valid("json");
-        const result = await dependencies.checkoutService.acceptOffer({
+        const snapshot = await dependencies.checkoutService.acceptOffer({
           sessionId: params.sessionId,
           offerVersion: body.offerVersion,
           surface: body.surface,
@@ -138,9 +134,7 @@ export function createCheckoutRoutes(dependencies: AppDependencies) {
           resumeToken,
         });
 
-        return serviceResponse(context, result, 200, (snapshot) => ({
-          snapshot,
-        }));
+        return context.json({ snapshot });
       },
     )
     .post(
@@ -160,7 +154,7 @@ export function createCheckoutRoutes(dependencies: AppDependencies) {
         }
         const params = context.req.valid("param");
         const body = context.req.valid("json");
-        const result = await dependencies.checkoutService.purchase({
+        const purchase = await dependencies.checkoutService.purchase({
           sessionId: params.sessionId,
           surface: body.surface,
           deviceId: body.deviceId,
@@ -168,7 +162,8 @@ export function createCheckoutRoutes(dependencies: AppDependencies) {
           idempotencyKey: idempotencyKey.data,
         });
 
-        return serviceResponse(context, result, (purchase) =>
+        return context.json(
+          purchase,
           purchase.disposition === "pending" ? 202 : 200,
         );
       },

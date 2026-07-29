@@ -1,5 +1,4 @@
 import { expect, test } from "bun:test";
-import { Result } from "better-result";
 import type { WSEvents, WSContext } from "hono/ws";
 import { createApp } from "../src/app";
 import {
@@ -146,16 +145,11 @@ test("fresh initial sync recovers a transition published before registration", a
   const client = createSocketSpy();
   const repriced = await harness.checkout.reprice({
     sessionId: created.snapshot.session.id,
+    resumeToken: created.resumeToken,
     increaseCents: 2_000,
   });
-  expect(Result.isOk(repriced)).toBe(true);
-  if (Result.isError(repriced)) {
-    return;
-  }
-  expect(repriced.value.session.revision).toBe(
-    created.snapshot.session.revision + 1,
-  );
-  expect(repriced.value.status).toBe("offer_review_required");
+  expect(repriced.session.revision).toBe(created.snapshot.session.revision + 1);
+  expect(repriced.status).toBe("offer_review_required");
   expect(
     harness.appDependencies.realtimeHub.connectionCount(
       created.snapshot.session.id,
@@ -164,7 +158,7 @@ test("fresh initial sync recovers a transition published before registration", a
   harness.appDependencies.realtimeHub.publish({
     type: "checkout_session_updated",
     cause: "repriced",
-    snapshot: repriced.value,
+    snapshot: repriced,
   });
   expect(client.messages).toHaveLength(0);
 
@@ -181,11 +175,11 @@ test("fresh initial sync recovers a transition published before registration", a
   harness.appDependencies.realtimeHub.publish({
     type: "checkout_session_updated",
     cause: "repriced",
-    snapshot: repriced.value,
+    snapshot: repriced,
   });
   expect(client.messages).toHaveLength(1);
 
-  freshRead.resolve(Result.ok(repriced.value));
+  freshRead.resolve(repriced);
   await flushAsyncWork();
 
   expect(client.messages).toHaveLength(2);
@@ -197,8 +191,8 @@ test("fresh initial sync recovers a transition published before registration", a
     "initial_sync",
   ]);
   expect(delivered.map((event) => event.snapshot.session.revision)).toEqual([
-    repriced.value.session.revision,
-    repriced.value.session.revision,
+    repriced.session.revision,
+    repriced.session.revision,
   ]);
   expect(delivered[1]?.snapshot.status).toBe("offer_review_required");
 });
@@ -237,7 +231,7 @@ for (const retirementEvent of ["onClose", "onError"] as const) {
       ),
     ).toBe(0);
 
-    freshRead.resolve(Result.ok(created.snapshot));
+    freshRead.resolve(created.snapshot);
     await flushAsyncWork();
 
     expect(client.messages).toHaveLength(0);

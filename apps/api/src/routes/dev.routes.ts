@@ -7,7 +7,6 @@ import { bearerToken } from "../http/auth";
 import {
   invalidRequest,
   respondWithError,
-  serviceResponse,
   toHttpError,
   unauthorizedSession,
 } from "../http/error-response";
@@ -36,27 +35,15 @@ function invalid(result: { success: boolean }, context: Context) {
 function invalidReprice(result: { success: boolean }, context: Context) {
   return result.success
     ? undefined
-    : respondWithError(context, toHttpError(new InvalidPriceAdjustment({})));
+    : respondWithError(context, toHttpError(new InvalidPriceAdjustment()));
 }
 
-async function authenticate(
-  context: Context,
-  dependencies: AppDependencies,
-  sessionId: string,
-) {
+function requireToken(context: Context): string | Response {
   const resumeToken = bearerToken(context.req.header("authorization"));
   if (resumeToken === undefined) {
     return respondWithError(context, unauthorizedSession());
   }
-  const session = await dependencies.checkoutService.getSession({
-    sessionId,
-    resumeToken,
-  });
-  if (session.isErr()) {
-    return respondWithError(context, toHttpError(session.error));
-  }
-
-  return { sessionId, resumeToken, snapshot: session.value };
+  return resumeToken;
 }
 
 export function createDevRoutes(dependencies: AppDependencies) {
@@ -67,20 +54,16 @@ export function createDevRoutes(dependencies: AppDependencies) {
       "/dev/checkout-sessions/:sessionId/activity",
       sessionParams,
       async (context) => {
-        const authenticated = await authenticate(
-          context,
-          dependencies,
-          context.req.valid("param").sessionId,
-        );
-        if (authenticated instanceof Response) {
-          return authenticated;
+        const resumeToken = requireToken(context);
+        if (resumeToken instanceof Response) {
+          return resumeToken;
         }
-        const result = await dependencies.checkoutService.listActivity({
-          sessionId: authenticated.sessionId,
-          resumeToken: authenticated.resumeToken,
+        const activity = await dependencies.checkoutService.listActivity({
+          sessionId: context.req.valid("param").sessionId,
+          resumeToken,
         });
 
-        return serviceResponse(context, result);
+        return context.json(activity);
       },
     )
     .post(
@@ -88,44 +71,33 @@ export function createDevRoutes(dependencies: AppDependencies) {
       sessionParams,
       zValidator("json", RepriceRequestSchema, invalidReprice),
       async (context) => {
-        const authenticated = await authenticate(
-          context,
-          dependencies,
-          context.req.valid("param").sessionId,
-        );
-        if (authenticated instanceof Response) {
-          return authenticated;
+        const resumeToken = requireToken(context);
+        if (resumeToken instanceof Response) {
+          return resumeToken;
         }
-        const result = await dependencies.checkoutService.reprice({
-          sessionId: authenticated.sessionId,
+        const snapshot = await dependencies.checkoutService.reprice({
+          sessionId: context.req.valid("param").sessionId,
+          resumeToken,
           increaseCents: context.req.valid("json").increaseCents,
         });
 
-        return serviceResponse(context, result, 200, (snapshot) => ({
-          snapshot,
-        }));
+        return context.json({ snapshot });
       },
     )
     .post(
       "/dev/checkout-sessions/:sessionId/expire",
       sessionParams,
       async (context) => {
-        const authenticated = await authenticate(
-          context,
-          dependencies,
-          context.req.valid("param").sessionId,
-        );
-        if (authenticated instanceof Response) {
-          return authenticated;
+        const resumeToken = requireToken(context);
+        if (resumeToken instanceof Response) {
+          return resumeToken;
         }
-        const result = await dependencies.checkoutService.forceExpire({
-          sessionId: authenticated.sessionId,
-          resumeToken: authenticated.resumeToken,
+        const snapshot = await dependencies.checkoutService.forceExpire({
+          sessionId: context.req.valid("param").sessionId,
+          resumeToken,
         });
 
-        return serviceResponse(context, result, 200, (snapshot) => ({
-          snapshot,
-        }));
+        return context.json({ snapshot });
       },
     )
     .put(
@@ -133,16 +105,17 @@ export function createDevRoutes(dependencies: AppDependencies) {
       sessionParams,
       zValidator("json", PaymentOutcomeRequestSchema, invalid),
       async (context) => {
-        const authenticated = await authenticate(
-          context,
-          dependencies,
-          context.req.valid("param").sessionId,
-        );
-        if (authenticated instanceof Response) {
-          return authenticated;
+        const resumeToken = requireToken(context);
+        if (resumeToken instanceof Response) {
+          return resumeToken;
         }
+        const sessionId = context.req.valid("param").sessionId;
+        await dependencies.checkoutService.getSession({
+          sessionId,
+          resumeToken,
+        });
         dependencies.paymentScenarios.setNextOutcome(
-          authenticated.sessionId,
+          sessionId,
           context.req.valid("json").outcome,
         );
 
@@ -153,30 +126,18 @@ export function createDevRoutes(dependencies: AppDependencies) {
       "/dev/checkout-sessions/:sessionId/open-ios-simulator",
       sessionParams,
       async (context) => {
-        const authenticated = await authenticate(
-          context,
-          dependencies,
-          context.req.valid("param").sessionId,
+        const resumeToken = requireToken(context);
+        if (resumeToken instanceof Response) {
+          return resumeToken;
+        }
+        const sessionId = context.req.valid("param").sessionId;
+        const deepLink = createCheckoutLinks(sessionId, resumeToken).deepLink;
+        await dependencies.checkoutService.recordAppHandoff(
+          { sessionId, resumeToken },
+          () => dependencies.iosSimulatorLauncher.open(deepLink),
         );
-        if (authenticated instanceof Response) {
-          return authenticated;
-        }
-        const deepLink = createCheckoutLinks(
-          authenticated.snapshot.session.id,
-          authenticated.resumeToken,
-        ).deepLink;
-        const launched = await dependencies.iosSimulatorLauncher.open(deepLink);
-        if (launched.isErr()) {
-          return respondWithError(context, toHttpError(launched.error));
-        }
-        const recorded = await dependencies.checkoutService.recordAppHandoff({
-          sessionId: authenticated.sessionId,
-          resumeToken: authenticated.resumeToken,
-        });
 
-        return recorded.isErr()
-          ? respondWithError(context, toHttpError(recorded.error))
-          : context.json(null, 200);
+        return context.json(null, 200);
       },
     );
 }

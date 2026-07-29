@@ -1,5 +1,4 @@
 import { expect, test } from "bun:test";
-import { Result } from "better-result";
 import { DelayedPaymentSimulator } from "../src/providers/payment-simulator";
 
 const payment = {
@@ -16,6 +15,6 @@ test("a scenario changed during authorization applies to the next attempt", asyn
   const firstAuthorization = simulator.authorize(payment);
   simulator.setNextOutcome(payment.sessionId, "failure");
 
-  expect(Result.isOk(await firstAuthorization)).toBe(true);
-  expect(Result.isError(await simulator.authorize(payment))).toBe(true);
+  expect(await firstAuthorization).toBe("success");
+  expect(await simulator.authorize(payment)).toBe("failure");
 });

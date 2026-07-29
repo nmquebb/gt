@@ -1,19 +1,14 @@
 import { expect, test } from "bun:test";
-import { Result, type Result as ResultType } from "better-result";
 import { InMemoryKeyedLock } from "../src/providers/keyed-lock";
 import { CheckoutMemoryRepository } from "../src/providers/memory-checkout-repository";
 import { DelayedPaymentSimulator } from "../src/providers/payment-simulator";
 import { RealtimeHub } from "../src/providers/realtime-hub";
+import {
+  CheckoutSessionExpired,
+  OfferVersionMismatch,
+} from "../src/services/checkout/checkout.errors";
 import { CheckoutService } from "../src/services/checkout/checkout.service";
 import { SEEDED_LISTINGS } from "../src/fixtures";
-
-function unwrap<T>(result: ResultType<T, unknown>): T {
-  if (Result.isError(result)) {
-    throw new Error("expected success");
-  }
-
-  return result.value;
-}
 
 function setup() {
   let now = new Date("2026-07-29T17:00:00.000Z");
@@ -41,13 +36,11 @@ function setup() {
 }
 
 async function createCheckout(service: CheckoutService) {
-  return unwrap(
-    await service.createSession({
-      listingId: "lst_101_a_1",
-      surface: "web",
-      deviceId: "web_1",
-    }),
-  );
+  return service.createSession({
+    listingId: "lst_101_a_1",
+    surface: "web",
+    deviceId: "web_1",
+  });
 }
 
 function createSocket() {
@@ -71,7 +64,7 @@ test("web leave keeps checkout active while mobile realtime is connected", async
 
   const left = await service.leave(webContext);
 
-  expect(Result.isOk(left) && left.value.status).toBe("ready");
+  expect(left.status).toBe("ready");
   expect(repository.getListing("lst_101_a_1")?.status).toBe("held");
 });
 
@@ -89,7 +82,7 @@ test("last realtime client leave abandons checkout", async () => {
 
   const left = await service.leave(webContext);
 
-  expect(Result.isOk(left) && left.value.status).toBe("abandoned");
+  expect(left.status).toBe("abandoned");
   expect(repository.getListing("lst_101_a_1")?.status).toBe("available");
 });
 
@@ -104,8 +97,8 @@ test("resume records a new surface and device only once", async () => {
     surface: "mobile" as const,
     deviceId: "mobile_1",
   };
-  const mobile = unwrap(await service.resume(mobileContext));
-  const duplicate = unwrap(await service.resume(mobileContext));
+  const mobile = await service.resume(mobileContext);
+  const duplicate = await service.resume(mobileContext);
 
   expect(mobile.session.id).toBe(sessionId);
   expect(duplicate.session.revision).toBe(mobile.session.revision);
@@ -131,18 +124,27 @@ test("reprices and accepts the current offer", async () => {
   const created = await createCheckout(service);
   const sessionId = created.snapshot.session.id;
 
-  const repriced = unwrap(
-    await service.reprice({ sessionId, increaseCents: 2_000 }),
-  );
-  const accepted = unwrap(
-    await service.acceptOffer({
+  const repriced = await service.reprice({
+    sessionId,
+    resumeToken: created.resumeToken,
+    increaseCents: 2_000,
+  });
+  expect(
+    service.acceptOffer({
       sessionId,
       resumeToken: created.resumeToken,
       surface: "mobile",
       deviceId: "mobile_1",
-      offerVersion: 2,
+      offerVersion: 1,
     }),
-  );
+  ).rejects.toBeInstanceOf(OfferVersionMismatch);
+  const accepted = await service.acceptOffer({
+    sessionId,
+    resumeToken: created.resumeToken,
+    surface: "mobile",
+    deviceId: "mobile_1",
+    offerVersion: 2,
+  });
 
   expect(repriced.status).toBe("offer_review_required");
   expect(repriced.session.offer).toEqual({
@@ -157,20 +159,34 @@ test("reprices and accepts the current offer", async () => {
   expect(accepted.session.offer.acceptedTotalCents).toBe(14_500);
 });
 
-test("expires from authoritative server time", async () => {
-  const { repository, service, setNow } = setup();
+test("expires from authoritative server time when rejecting a command", async () => {
+  const { realtime, repository, service, setNow } = setup();
   const created = await createCheckout(service);
   const sessionId = created.snapshot.session.id;
+  const messages: string[] = [];
+  realtime.register(sessionId, {
+    send(message): void {
+      messages.push(String(message));
+    },
+  });
   setNow("2026-07-29T17:01:30.001Z");
 
-  const expired = await service.getSession({
+  const rejected = service.acceptOffer({
     sessionId,
     resumeToken: created.resumeToken,
+    surface: "web",
+    deviceId: "web_1",
+    offerVersion: 1,
   });
 
-  expect(Result.isOk(expired) && expired.value.status).toBe("expired");
+  expect(rejected).rejects.toBeInstanceOf(CheckoutSessionExpired);
   expect(repository.getSession(sessionId)?.phase).toBe("expired");
   expect(repository.getListing("lst_101_a_1")?.status).toBe("available");
+  expect(messages).toHaveLength(1);
+  expect(JSON.parse(messages[0] ?? "{}")).toMatchObject({
+    cause: "expired",
+    snapshot: { status: "expired" },
+  });
 });
 
 test("fails then retries a payment", async () => {
@@ -179,24 +195,20 @@ test("fails then retries a payment", async () => {
   const sessionId = created.snapshot.session.id;
   payment.setNextOutcome(sessionId, "failure");
 
-  const failed = unwrap(
-    await service.purchase({
-      sessionId,
-      resumeToken: created.resumeToken,
-      idempotencyKey: "web-click",
-      surface: "web",
-      deviceId: "web_1",
-    }),
-  );
-  const completed = unwrap(
-    await service.purchase({
-      sessionId,
-      resumeToken: created.resumeToken,
-      idempotencyKey: "mobile-click",
-      surface: "mobile",
-      deviceId: "mobile_1",
-    }),
-  );
+  const failed = await service.purchase({
+    sessionId,
+    resumeToken: created.resumeToken,
+    idempotencyKey: "web-click",
+    surface: "web",
+    deviceId: "web_1",
+  });
+  const completed = await service.purchase({
+    sessionId,
+    resumeToken: created.resumeToken,
+    idempotencyKey: "mobile-click",
+    surface: "mobile",
+    deviceId: "mobile_1",
+  });
 
   expect(failed.disposition).toBe("failed");
   expect(failed.snapshot.status).toBe("purchase_failed");
@@ -228,8 +240,8 @@ test("concurrent purchases create one attempt and one order", async () => {
     }),
   ]);
 
-  expect(Result.isOk(web)).toBe(true);
-  expect(Result.isOk(mobile)).toBe(true);
+  expect(web.disposition).toBe("completed");
+  expect(mobile.disposition).toBeOneOf(["pending", "completed"]);
   expect(repository.listAttempts(sessionId)).toHaveLength(1);
   expect(repository.listOrders(sessionId)).toHaveLength(1);
 });

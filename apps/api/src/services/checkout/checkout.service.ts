@@ -1,12 +1,11 @@
 import { randomUUID } from "node:crypto";
-import { Result, type Result as ResultType } from "better-result";
 import type {
   AcceptOfferRequest,
   ActivityEntry,
-  CheckoutSessionUpdatedCause,
   CheckoutSnapshot,
   CreateCheckoutSessionRequest,
   ListingsResponse,
+  PaymentOutcome,
   PurchaseRequest,
   PurchaseResponse,
   Surface,
@@ -20,20 +19,18 @@ import type {
   OrderRecord,
   PurchaseAttemptRecord,
 } from "../../providers/memory-checkout-repository";
-import type {
-  DelayedPaymentSimulator,
-  PaymentAuthorization,
-} from "../../providers/payment-simulator";
+import type { DelayedPaymentSimulator } from "../../providers/payment-simulator";
 import type { RealtimeHub } from "../../providers/realtime-hub";
 import {
   CheckoutSessionExpired,
   CheckoutSessionNotFound,
+  CheckoutError,
   InvalidPriceAdjustment,
   InvalidResumeToken,
   ListingUnavailable,
   OfferVersionMismatch,
   PurchaseNotAllowed,
-  type CheckoutError,
+  type CheckoutUpdate,
 } from "./checkout.errors";
 import { projectCheckout } from "./checkout.projection";
 
@@ -70,7 +67,7 @@ export interface CheckoutClientInput extends AuthenticatedSessionInput {
 export interface AcceptOfferInput
   extends AuthenticatedSessionInput, AcceptOfferRequest {}
 
-export interface RepriceInput extends SessionIdInput {
+export interface RepriceInput extends AuthenticatedSessionInput {
   increaseCents: number;
 }
 
@@ -81,18 +78,18 @@ export interface PurchaseInput
 
 export type PurchaseOutput = PurchaseResponse;
 
-interface LockedOperationOutput<T> {
-  result: ResultType<T, CheckoutError>;
-  event?: {
-    cause: CheckoutSessionUpdatedCause;
-    snapshot: CheckoutSnapshot;
-  };
-  events?: readonly {
-    cause: CheckoutSessionUpdatedCause;
-    snapshot: CheckoutSnapshot;
-  }[];
-  attempt?: PurchaseAttemptRecord;
+interface Mutation<T> {
+  value: T;
+  updates?: readonly CheckoutUpdate[];
 }
+
+type PurchaseStart =
+  | { kind: "resolved"; response: PurchaseResponse }
+  | {
+      kind: "authorize";
+      response: PurchaseResponse;
+      attempt: PurchaseAttemptRecord;
+    };
 
 interface SessionOperationInput {
   session: CheckoutSessionRecord;
@@ -103,10 +100,7 @@ interface SessionOperationInput {
 interface TransitionOutput {
   session: CheckoutSessionRecord;
   snapshot: CheckoutSnapshot;
-  event: {
-    cause: CheckoutSessionUpdatedCause;
-    snapshot: CheckoutSnapshot;
-  };
+  update: CheckoutUpdate;
 }
 
 export class CheckoutService {
@@ -118,7 +112,7 @@ export class CheckoutService {
     private readonly now: () => Date = () => new Date(),
   ) {}
 
-  async listListings(): Promise<ResultType<ListingsResponse, CheckoutError>> {
+  async listListings(): Promise<ListingsResponse> {
     const listingIds = this.repository
       .listListings()
       .map((listing) => listing.id)
@@ -136,446 +130,353 @@ export class CheckoutService {
       status: listing.status,
     }));
 
-    return Result.ok({ event: DEMO_EVENT, listings });
+    return { event: DEMO_EVENT, listings };
   }
 
   async createSession(
     input: CreateCheckoutSessionRequest,
-  ): Promise<ResultType<CreatedCheckout, CheckoutError>> {
+  ): Promise<CreatedCheckout> {
     await this.reconcileExpiredListing(input.listingId);
-
-    return this.locks.withKeys(
-      [`checkout-owner:${input.deviceId}`],
-      async () => {
-        const association =
-          this.repository.getNonterminalSessionByInitiatingDevice(
-            input.deviceId,
-          );
-        const lockKeys = [`listing:${input.listingId}`];
-        if (association) {
-          lockKeys.push(
-            `listing:${association.listing.id}`,
-            `session:${association.id}`,
-          );
-        }
-
-        const output = await this.locks.withKeys(
-          lockKeys,
-          async (): Promise<LockedOperationOutput<CreatedCheckout>> => {
-            const now = this.now();
-            const prior =
-              this.repository.getNonterminalSessionByInitiatingDevice(
-                input.deviceId,
-              );
-
-            if (prior?.phase === "purchasing") {
-              return {
-                result: Result.err(
-                  new PurchaseNotAllowed({
-                    snapshot: projectCheckout(prior, now),
-                  }),
-                ),
-              };
-            }
-
-            const priorListing = prior
-              ? this.repository.getListing(prior.listing.id)
-              : undefined;
-            const expired =
-              prior && priorListing
-                ? this.expireIfNeeded(prior, priorListing, now)
-                : undefined;
-            const currentPrior = expired === undefined ? prior : undefined;
-            const currentListing = this.repository.getListing(input.listingId);
-            if (
-              !currentListing ||
-              (currentListing.status !== "available" &&
-                currentListing.heldBySessionId !== currentPrior?.id)
-            ) {
-              return {
-                result: Result.err(
-                  new ListingUnavailable({ listingId: input.listingId }),
-                ),
-                ...(expired ? { event: expired.event } : {}),
-              };
-            }
-
-            const superseded =
-              currentPrior && priorListing
-                ? this.abandon(currentPrior, priorListing, now, {
-                    surface: input.surface,
-                    deviceId: input.deviceId,
-                    reason: "superseded",
-                  })
-                : undefined;
-            const availableListing = this.repository.getListing(
-              input.listingId,
+    let updatesOnError: readonly CheckoutUpdate[] = [];
+    try {
+      const mutation = await this.locks.withKeys(
+        [`checkout-owner:${input.deviceId}`],
+        async (): Promise<Mutation<CreatedCheckout>> => {
+          const association =
+            this.repository.getNonterminalSessionByInitiatingDevice(
+              input.deviceId,
             );
-            if (!availableListing || availableListing.status !== "available") {
+          const lockKeys = [`listing:${input.listingId}`];
+          if (association) {
+            lockKeys.push(
+              `listing:${association.listing.id}`,
+              `session:${association.id}`,
+            );
+          }
+
+          return this.locks.withKeys(
+            lockKeys,
+            async (): Promise<Mutation<CreatedCheckout>> => {
+              const now = this.now();
+              const prior =
+                this.repository.getNonterminalSessionByInitiatingDevice(
+                  input.deviceId,
+                );
+
+              if (prior?.phase === "purchasing") {
+                throw new PurchaseNotAllowed(projectCheckout(prior, now));
+              }
+
+              const priorListing = prior
+                ? this.repository.getListing(prior.listing.id)
+                : undefined;
+              const expired =
+                prior && priorListing
+                  ? this.expireIfNeeded(prior, priorListing, now)
+                  : undefined;
+              const currentPrior = expired === undefined ? prior : undefined;
+              const currentListing = this.repository.getListing(
+                input.listingId,
+              );
+              if (
+                !currentListing ||
+                (currentListing.status !== "available" &&
+                  currentListing.heldBySessionId !== currentPrior?.id)
+              ) {
+                updatesOnError = expired ? [expired.update] : [];
+                throw new ListingUnavailable(input.listingId);
+              }
+
+              const superseded =
+                currentPrior && priorListing
+                  ? this.abandon(currentPrior, priorListing, now, {
+                      surface: input.surface,
+                      deviceId: input.deviceId,
+                      reason: "superseded",
+                    })
+                  : undefined;
+              const availableListing = this.repository.getListing(
+                input.listingId,
+              );
+              if (
+                !availableListing ||
+                availableListing.status !== "available"
+              ) {
+                updatesOnError = expired ? [expired.update] : [];
+                throw new ListingUnavailable(input.listingId);
+              }
+
+              const session = this.createRecord(availableListing, input, now);
+              this.repository.saveSession(session);
+              this.repository.saveListing({
+                ...availableListing,
+                status: "held",
+                heldBySessionId: session.id,
+              });
+              this.repository.appendActivity({
+                id: identifier("act"),
+                at: now.toISOString(),
+                sessionId: session.id,
+                revision: session.revision,
+                type: "checkout_session_created",
+                surface: input.surface,
+                deviceId: input.deviceId,
+                details: {
+                  listingId: availableListing.id,
+                  expiresAt: session.inventoryHold.expiresAt,
+                },
+              });
+
               return {
-                result: Result.err(
-                  new ListingUnavailable({ listingId: input.listingId }),
-                ),
-                ...(expired ? { event: expired.event } : {}),
+                value: {
+                  snapshot: projectCheckout(session, now),
+                  resumeToken: session.resumeToken,
+                },
+                ...(superseded
+                  ? { updates: [superseded.update] }
+                  : expired
+                    ? { updates: [expired.update] }
+                    : {}),
               };
-            }
-
-            const session = this.createRecord(availableListing, input, now);
-            this.repository.saveSession(session);
-            this.repository.saveListing({
-              ...availableListing,
-              status: "held",
-              heldBySessionId: session.id,
-            });
-            this.repository.appendActivity({
-              id: identifier("act"),
-              at: now.toISOString(),
-              sessionId: session.id,
-              revision: session.revision,
-              type: "checkout_session_created",
-              surface: input.surface,
-              deviceId: input.deviceId,
-              details: {
-                listingId: availableListing.id,
-                expiresAt: session.inventoryHold.expiresAt,
-              },
-            });
-
-            return {
-              result: Result.ok({
-                snapshot: projectCheckout(session, now),
-                resumeToken: session.resumeToken,
-              }),
-              ...(superseded
-                ? { event: superseded.event }
-                : expired
-                  ? { event: expired.event }
-                  : {}),
-            };
-          },
+            },
+          );
+        },
+      );
+      this.publishUpdates(mutation.updates);
+      return mutation.value;
+    } catch (error) {
+      if (error instanceof CheckoutError) {
+        this.publishUpdates(
+          error.updates.length > 0 ? error.updates : updatesOnError,
         );
-        this.publishOutput(output);
-
-        return output.result;
-      },
-    );
+      }
+      throw error;
+    }
   }
 
   async getSession(
     input: AuthenticatedSessionInput,
-  ): Promise<ResultType<CheckoutSnapshot, CheckoutError>> {
-    const output = await this.withSessionAndListing(
-      input.sessionId,
-      ({ session, listing, now }) => {
-        const authenticationError = this.authenticate(
-          session.id,
-          input.resumeToken,
-        );
-        if (authenticationError) {
-          return { result: Result.err(authenticationError) };
-        }
+  ): Promise<CheckoutSnapshot> {
+    return this.withSession(input.sessionId, ({ session, listing, now }) => {
+      this.authenticate(session, input.resumeToken);
 
-        const expired = this.expireIfNeeded(session, listing, now);
-        return {
-          result: Result.ok(projectCheckout(expired?.session ?? session, now)),
-          ...(expired ? { event: expired.event } : {}),
-        };
-      },
-    );
-
-    return output?.result ?? Result.err(this.notFound(input.sessionId));
+      const expired = this.expireIfNeeded(session, listing, now);
+      return {
+        value: projectCheckout(expired?.session ?? session, now),
+        ...(expired ? { updates: [expired.update] } : {}),
+      };
+    });
   }
 
-  async resume(
-    input: CheckoutClientInput,
-  ): Promise<ResultType<CheckoutSnapshot, CheckoutError>> {
-    const output = await this.withSessionAndListing(
-      input.sessionId,
-      ({ session, listing, now }) => {
-        const authenticationError = this.authenticate(
-          session.id,
-          input.resumeToken,
-        );
-        if (authenticationError) {
-          return { result: Result.err(authenticationError) };
-        }
+  async resume(input: CheckoutClientInput): Promise<CheckoutSnapshot> {
+    return this.withSession(input.sessionId, ({ session, listing, now }) => {
+      this.authenticate(session, input.resumeToken);
 
-        const expired = this.expireIfNeeded(session, listing, now);
-        const current = expired?.session ?? session;
+      const expired = this.expireIfNeeded(session, listing, now);
+      const current = expired?.session ?? session;
 
-        const knownClient = current.observedClients.some(
-          (client) =>
-            client.surface === input.surface &&
-            client.deviceId === input.deviceId,
-        );
-        if (knownClient) {
-          return {
-            result: Result.ok(projectCheckout(current, now)),
-            ...(expired ? { event: expired.event } : {}),
-          };
-        }
-
-        const resumed: CheckoutSessionRecord = {
-          ...current,
-          observedClients: [
-            ...current.observedClients,
-            { surface: input.surface, deviceId: input.deviceId },
-          ],
-        };
-        this.repository.saveSession(resumed);
-        this.repository.appendActivity({
-          id: identifier("act"),
-          at: now.toISOString(),
-          sessionId: resumed.id,
-          revision: resumed.revision,
-          type: "checkout_session_resumed",
-          surface: input.surface,
-          deviceId: input.deviceId,
-          details: {},
-        });
-
+      const knownClient = current.observedClients.some(
+        (client) =>
+          client.surface === input.surface &&
+          client.deviceId === input.deviceId,
+      );
+      if (knownClient) {
         return {
-          result: Result.ok(projectCheckout(resumed, now)),
-          ...(expired ? { event: expired.event } : {}),
+          value: projectCheckout(current, now),
+          ...(expired ? { updates: [expired.update] } : {}),
         };
-      },
-    );
+      }
 
-    return output?.result ?? Result.err(this.notFound(input.sessionId));
+      const resumed: CheckoutSessionRecord = {
+        ...current,
+        observedClients: [
+          ...current.observedClients,
+          { surface: input.surface, deviceId: input.deviceId },
+        ],
+      };
+      this.repository.saveSession(resumed);
+      this.repository.appendActivity({
+        id: identifier("act"),
+        at: now.toISOString(),
+        sessionId: resumed.id,
+        revision: resumed.revision,
+        type: "checkout_session_resumed",
+        surface: input.surface,
+        deviceId: input.deviceId,
+        details: {},
+      });
+
+      return {
+        value: projectCheckout(resumed, now),
+        ...(expired ? { updates: [expired.update] } : {}),
+      };
+    });
   }
 
-  async leave(
-    input: CheckoutClientInput,
-  ): Promise<ResultType<CheckoutSnapshot, CheckoutError>> {
-    const output = await this.withSessionAndListing(
-      input.sessionId,
-      ({ session, listing, now }) => {
-        const authenticationError = this.authenticate(
-          session.id,
-          input.resumeToken,
-        );
-        if (authenticationError) {
-          return { result: Result.err(authenticationError) };
-        }
+  async leave(input: CheckoutClientInput): Promise<CheckoutSnapshot> {
+    return this.withSession(input.sessionId, ({ session, listing, now }) => {
+      this.authenticate(session, input.resumeToken);
 
-        const expired = this.expireIfNeeded(session, listing, now);
-        if (expired) {
-          return {
-            result: Result.ok(expired.snapshot),
-            event: expired.event,
-          };
-        }
-        if (
-          session.phase !== "active" ||
-          this.realtime.connectionCount(session.id) > 1
-        ) {
-          return { result: Result.ok(projectCheckout(session, now)) };
-        }
-
-        const abandoned = this.abandon(session, listing, now, {
-          surface: input.surface,
-          deviceId: input.deviceId,
-          reason: "navigation",
-        });
+      const expired = this.expireIfNeeded(session, listing, now);
+      if (expired) {
         return {
-          result: Result.ok(abandoned.snapshot),
-          event: abandoned.event,
+          value: expired.snapshot,
+          updates: [expired.update],
         };
-      },
-    );
+      }
+      if (
+        session.phase !== "active" ||
+        this.realtime.connectionCount(session.id) > 1
+      ) {
+        return { value: projectCheckout(session, now) };
+      }
 
-    return output?.result ?? Result.err(this.notFound(input.sessionId));
+      const abandoned = this.abandon(session, listing, now, {
+        surface: input.surface,
+        deviceId: input.deviceId,
+        reason: "navigation",
+      });
+      return {
+        value: abandoned.snapshot,
+        updates: [abandoned.update],
+      };
+    });
   }
 
-  async acceptOffer(
-    input: AcceptOfferInput,
-  ): Promise<ResultType<CheckoutSnapshot, CheckoutError>> {
-    const output = await this.withSessionAndListing(
-      input.sessionId,
-      ({ session, listing, now }) => {
-        const authenticationError = this.authenticate(
-          session.id,
-          input.resumeToken,
+  async acceptOffer(input: AcceptOfferInput): Promise<CheckoutSnapshot> {
+    return this.withSession(input.sessionId, ({ session, listing, now }) => {
+      this.authenticate(session, input.resumeToken);
+
+      const expired = this.expireIfNeeded(session, listing, now);
+      if (expired || session.phase === "expired") {
+        throw new CheckoutSessionExpired(
+          expired?.snapshot ?? projectCheckout(session, now),
+          expired ? [expired.update] : [],
         );
-        if (authenticationError) {
-          return { result: Result.err(authenticationError) };
-        }
+      }
 
-        const expired = this.expireIfNeeded(session, listing, now);
-        if (expired || session.phase === "expired") {
-          return {
-            result: Result.err(
-              new CheckoutSessionExpired({
-                snapshot: expired?.snapshot ?? projectCheckout(session, now),
-              }),
-            ),
-            ...(expired ? { event: expired.event } : {}),
-          };
-        }
+      const currentSnapshot = projectCheckout(session, now);
+      if (session.phase !== "active") {
+        throw new PurchaseNotAllowed(currentSnapshot);
+      }
+      if (input.offerVersion !== session.offer.currentVersion) {
+        throw new OfferVersionMismatch(currentSnapshot);
+      }
+      if (session.offer.acceptedVersion === session.offer.currentVersion) {
+        return { value: currentSnapshot };
+      }
 
-        const currentSnapshot = projectCheckout(session, now);
-        if (session.phase !== "active") {
-          return {
-            result: Result.err(
-              new PurchaseNotAllowed({ snapshot: currentSnapshot }),
-            ),
-          };
-        }
-        if (input.offerVersion !== session.offer.currentVersion) {
-          return {
-            result: Result.err(
-              new OfferVersionMismatch({ snapshot: currentSnapshot }),
-            ),
-          };
-        }
-        if (session.offer.acceptedVersion === session.offer.currentVersion) {
-          return { result: Result.ok(currentSnapshot) };
-        }
-
-        const accepted: CheckoutSessionRecord = {
-          ...session,
-          revision: session.revision + 1,
-          updatedAt: now.toISOString(),
-          offer: {
-            ...session.offer,
-            acceptedVersion: session.offer.currentVersion,
-            acceptedTotalCents: session.offer.currentTotalCents,
-          },
-        };
-        this.repository.saveSession(accepted);
-        this.repository.appendActivity({
-          id: identifier("act"),
-          at: now.toISOString(),
-          sessionId: accepted.id,
-          revision: accepted.revision,
-          type: "price_change_accepted",
-          surface: input.surface,
-          deviceId: input.deviceId,
-          details: {
-            acceptedVersion: accepted.offer.acceptedVersion,
-            acceptedTotalCents: accepted.offer.acceptedTotalCents,
-          },
-        });
-        const snapshot = projectCheckout(accepted, now);
-        return {
-          result: Result.ok(snapshot),
-          event: { cause: "offer_accepted", snapshot },
-        };
-      },
-    );
-
-    return output?.result ?? Result.err(this.notFound(input.sessionId));
+      const accepted: CheckoutSessionRecord = {
+        ...session,
+        revision: session.revision + 1,
+        updatedAt: now.toISOString(),
+        offer: {
+          ...session.offer,
+          acceptedVersion: session.offer.currentVersion,
+          acceptedTotalCents: session.offer.currentTotalCents,
+        },
+      };
+      this.repository.saveSession(accepted);
+      this.repository.appendActivity({
+        id: identifier("act"),
+        at: now.toISOString(),
+        sessionId: accepted.id,
+        revision: accepted.revision,
+        type: "price_change_accepted",
+        surface: input.surface,
+        deviceId: input.deviceId,
+        details: {
+          acceptedVersion: accepted.offer.acceptedVersion,
+          acceptedTotalCents: accepted.offer.acceptedTotalCents,
+        },
+      });
+      const snapshot = projectCheckout(accepted, now);
+      return {
+        value: snapshot,
+        updates: [{ cause: "offer_accepted", snapshot }],
+      };
+    });
   }
 
-  async reprice(
-    input: RepriceInput,
-  ): Promise<ResultType<CheckoutSnapshot, CheckoutError>> {
-    const output = await this.withSessionAndListing(
-      input.sessionId,
-      ({ session, listing, now }) => {
-        const expired = this.expireIfNeeded(session, listing, now);
-        if (expired || session.phase === "expired") {
-          return {
-            result: Result.err(
-              new CheckoutSessionExpired({
-                snapshot: expired?.snapshot ?? projectCheckout(session, now),
-              }),
-            ),
-            ...(expired ? { event: expired.event } : {}),
-          };
-        }
+  async reprice(input: RepriceInput): Promise<CheckoutSnapshot> {
+    return this.withSession(input.sessionId, ({ session, listing, now }) => {
+      this.authenticate(session, input.resumeToken);
+      const expired = this.expireIfNeeded(session, listing, now);
+      if (expired || session.phase === "expired") {
+        throw new CheckoutSessionExpired(
+          expired?.snapshot ?? projectCheckout(session, now),
+          expired ? [expired.update] : [],
+        );
+      }
 
-        const currentSnapshot = projectCheckout(session, now);
-        if (session.phase !== "active") {
-          return {
-            result: Result.err(
-              new PurchaseNotAllowed({ snapshot: currentSnapshot }),
-            ),
-          };
-        }
+      const currentSnapshot = projectCheckout(session, now);
+      if (session.phase !== "active") {
+        throw new PurchaseNotAllowed(currentSnapshot);
+      }
 
-        const nextVersion = session.offer.currentVersion + 1;
-        const nextTotal = session.offer.currentTotalCents + input.increaseCents;
-        if (
-          !Number.isSafeInteger(input.increaseCents) ||
-          !Number.isSafeInteger(nextVersion) ||
-          !Number.isSafeInteger(nextTotal)
-        ) {
-          return { result: Result.err(new InvalidPriceAdjustment({})) };
-        }
+      const nextVersion = session.offer.currentVersion + 1;
+      const nextTotal = session.offer.currentTotalCents + input.increaseCents;
+      if (
+        !Number.isSafeInteger(input.increaseCents) ||
+        !Number.isSafeInteger(nextVersion) ||
+        !Number.isSafeInteger(nextTotal)
+      ) {
+        throw new InvalidPriceAdjustment();
+      }
 
-        const repriced: CheckoutSessionRecord = {
-          ...session,
-          revision: session.revision + 1,
-          updatedAt: now.toISOString(),
-          offer: {
-            ...session.offer,
-            currentVersion: nextVersion,
-            currentTotalCents: nextTotal,
-          },
-        };
-        this.repository.saveSession(repriced);
-        this.repository.appendActivity({
-          id: identifier("act"),
-          at: now.toISOString(),
-          sessionId: repriced.id,
-          revision: repriced.revision,
-          type: "price_changed",
-          details: {
-            previousTotalCents: session.offer.currentTotalCents,
-            currentTotalCents: repriced.offer.currentTotalCents,
-            currentVersion: repriced.offer.currentVersion,
-          },
-        });
-        const snapshot = projectCheckout(repriced, now);
-        return {
-          result: Result.ok(snapshot),
-          event: { cause: "repriced", snapshot },
-        };
-      },
-    );
-
-    return output?.result ?? Result.err(this.notFound(input.sessionId));
+      const repriced: CheckoutSessionRecord = {
+        ...session,
+        revision: session.revision + 1,
+        updatedAt: now.toISOString(),
+        offer: {
+          ...session.offer,
+          currentVersion: nextVersion,
+          currentTotalCents: nextTotal,
+        },
+      };
+      this.repository.saveSession(repriced);
+      this.repository.appendActivity({
+        id: identifier("act"),
+        at: now.toISOString(),
+        sessionId: repriced.id,
+        revision: repriced.revision,
+        type: "price_changed",
+        details: {
+          previousTotalCents: session.offer.currentTotalCents,
+          currentTotalCents: repriced.offer.currentTotalCents,
+          currentVersion: repriced.offer.currentVersion,
+        },
+      });
+      const snapshot = projectCheckout(repriced, now);
+      return {
+        value: snapshot,
+        updates: [{ cause: "repriced", snapshot }],
+      };
+    });
   }
 
   async forceExpire(
     input: AuthenticatedSessionInput,
-  ): Promise<ResultType<CheckoutSnapshot, CheckoutError>> {
-    const output = await this.withSessionAndListing(
-      input.sessionId,
-      ({ session, listing, now }) => {
-        const authenticationError = this.authenticate(
-          session.id,
-          input.resumeToken,
-        );
-        if (authenticationError) {
-          return { result: Result.err(authenticationError) };
-        }
-        if (session.phase !== "active") {
-          return { result: Result.ok(projectCheckout(session, now)) };
-        }
+  ): Promise<CheckoutSnapshot> {
+    return this.withSession(input.sessionId, ({ session, listing, now }) => {
+      this.authenticate(session, input.resumeToken);
+      if (session.phase !== "active") {
+        return { value: projectCheckout(session, now) };
+      }
 
-        const expired = this.expire(session, listing, now);
-        return { result: Result.ok(expired.snapshot), event: expired.event };
-      },
-    );
-
-    return output?.result ?? Result.err(this.notFound(input.sessionId));
+      const expired = this.expire(session, listing, now);
+      return { value: expired.snapshot, updates: [expired.update] };
+    });
   }
 
-  async purchase(
-    input: PurchaseInput,
-  ): Promise<ResultType<PurchaseOutput, CheckoutError>> {
-    const started = await this.withSessionAndListing(
+  async purchase(input: PurchaseInput): Promise<PurchaseOutput> {
+    const started = await this.withSession(
       input.sessionId,
       ({ session, listing, now }) =>
         this.startPurchase(input, session, listing, now),
     );
-    if (!started) {
-      return Result.err(this.notFound(input.sessionId));
-    }
-    if (!started.attempt) {
-      return started.result;
+    if (started.kind === "resolved") {
+      return started.response;
     }
 
     const authorization = await this.payment.authorize({
@@ -584,125 +485,100 @@ export class CheckoutService {
       amountCents: started.attempt.totalCents,
       currency: started.attempt.currency,
     });
-    const finalized = await this.withSessionAndListing(
-      input.sessionId,
-      ({ session, listing, now }) =>
-        this.finalizePurchase(
-          started.attempt as PurchaseAttemptRecord,
-          authorization,
-          session,
-          listing,
-          now,
-        ),
+    return this.withSession(input.sessionId, ({ session, listing, now }) =>
+      this.finalizePurchase(
+        started.attempt,
+        authorization,
+        session,
+        listing,
+        now,
+      ),
     );
-
-    return finalized?.result ?? Result.err(this.notFound(input.sessionId));
   }
 
   async recordAppHandoff(
     input: AuthenticatedSessionInput,
-  ): Promise<ResultType<void, CheckoutError>> {
-    const output = await this.withSessionAndListing(
-      input.sessionId,
-      ({ session, now }) => {
-        const authenticationError = this.authenticate(
-          session.id,
-          input.resumeToken,
-        );
-        if (authenticationError) {
-          return { result: Result.err(authenticationError) };
-        }
-        this.repository.appendActivity({
-          id: identifier("act"),
-          at: now.toISOString(),
-          sessionId: session.id,
-          revision: session.revision,
-          type: "app_handoff_opened",
-          details: {},
-        });
-        return { result: Result.ok(undefined) };
-      },
-    );
+    handoff: () => Promise<void>,
+  ): Promise<void> {
+    await this.withSession(input.sessionId, ({ session }) => {
+      this.authenticate(session, input.resumeToken);
+      return { value: undefined };
+    });
+    await handoff();
 
-    return output?.result ?? Result.err(this.notFound(input.sessionId));
+    return this.withSession(input.sessionId, ({ session, now }) => {
+      this.repository.appendActivity({
+        id: identifier("act"),
+        at: now.toISOString(),
+        sessionId: session.id,
+        revision: session.revision,
+        type: "app_handoff_opened",
+        details: {},
+      });
+      return { value: undefined };
+    });
   }
 
   async listActivity(
     input: AuthenticatedSessionInput,
-  ): Promise<ResultType<readonly ActivityEntry[], CheckoutError>> {
-    const authentication = this.repository.getSession(input.sessionId);
-    if (!authentication) {
-      return Result.err(this.notFound(input.sessionId));
-    }
-    const authenticationError = this.authenticate(
-      authentication.id,
-      input.resumeToken,
-    );
-    if (authenticationError) {
-      return Result.err(authenticationError);
-    }
-
-    return Result.ok(this.repository.listActivity(input.sessionId));
-  }
-
-  private authenticate(
-    sessionId: string,
-    token: string,
-  ): CheckoutSessionNotFound | InvalidResumeToken | undefined {
-    const session = this.repository.getSession(sessionId);
-    if (!session) {
-      return this.notFound(sessionId);
-    }
-
-    return session.resumeToken === token
-      ? undefined
-      : new InvalidResumeToken({});
-  }
-
-  private publish(
-    cause: CheckoutSessionUpdatedCause,
-    snapshot: CheckoutSnapshot,
-  ): void {
-    this.realtime.publish({
-      type: "checkout_session_updated",
-      cause,
-      snapshot,
+  ): Promise<readonly ActivityEntry[]> {
+    return this.withSession(input.sessionId, ({ session }) => {
+      this.authenticate(session, input.resumeToken);
+      return { value: this.repository.listActivity(input.sessionId) };
     });
   }
 
-  private publishOutput<T>(output: LockedOperationOutput<T>): void {
-    if (output.event) {
-      this.publish(output.event.cause, output.event.snapshot);
-    }
-    for (const event of output.events ?? []) {
-      this.publish(event.cause, event.snapshot);
+  private authenticate(session: CheckoutSessionRecord, token: string): void {
+    if (session.resumeToken !== token) {
+      throw new InvalidResumeToken();
     }
   }
 
-  private async withSessionAndListing<T>(
+  private publishUpdates(updates: readonly CheckoutUpdate[] = []): void {
+    for (const update of updates) {
+      this.realtime.publish({
+        type: "checkout_session_updated",
+        cause: update.cause,
+        snapshot: update.snapshot,
+      });
+    }
+  }
+
+  private async withSession<T>(
     sessionId: string,
-    operation: (input: SessionOperationInput) => LockedOperationOutput<T>,
-  ): Promise<LockedOperationOutput<T> | undefined> {
+    operation: (input: SessionOperationInput) => Mutation<T>,
+  ): Promise<T> {
+    try {
+      const mutation = await this.lockSession(sessionId, operation);
+      this.publishUpdates(mutation.updates);
+      return mutation.value;
+    } catch (error) {
+      if (error instanceof CheckoutError) {
+        this.publishUpdates(error.updates);
+      }
+      throw error;
+    }
+  }
+
+  private async lockSession<T>(
+    sessionId: string,
+    operation: (input: SessionOperationInput) => Mutation<T>,
+  ): Promise<Mutation<T>> {
     const association = this.repository.getSession(sessionId);
     if (!association) {
-      return undefined;
+      throw new CheckoutSessionNotFound(sessionId);
     }
-    const output = await this.locks.withKeys(
+    return this.locks.withKeys(
       [`listing:${association.listing.id}`, `session:${sessionId}`],
       async () => {
         const session = this.repository.getSession(sessionId);
         const listing = this.repository.getListing(association.listing.id);
         if (!session || !listing) {
-          return undefined;
+          throw new CheckoutSessionNotFound(sessionId);
         }
         return operation({ session, listing, now: this.now() });
       },
     );
-    if (output) {
-      this.publishOutput(output);
-    }
-
-    return output;
   }
 
   private startPurchase(
@@ -710,14 +586,8 @@ export class CheckoutService {
     session: CheckoutSessionRecord,
     listing: ListingRecord,
     now: Date,
-  ): LockedOperationOutput<PurchaseOutput> {
-    const authenticationError = this.authenticate(
-      session.id,
-      input.resumeToken,
-    );
-    if (authenticationError) {
-      return { result: Result.err(authenticationError) };
-    }
+  ): Mutation<PurchaseStart> {
+    this.authenticate(session, input.resumeToken);
 
     const expired = this.expireIfNeeded(session, listing, now);
     const snapshot = expired?.snapshot ?? projectCheckout(session, now);
@@ -727,28 +597,32 @@ export class CheckoutService {
     );
     if (replay) {
       return {
-        result: Result.ok(
-          this.purchaseOutput(
+        value: {
+          kind: "resolved",
+          response: this.purchaseOutput(
             this.dispositionForAttempt(replay),
             snapshot,
             false,
           ),
-        ),
-        ...(expired ? { event: expired.event } : {}),
+        },
+        ...(expired ? { updates: [expired.update] } : {}),
       };
     }
 
     if (expired || session.phase === "expired") {
-      return {
-        result: Result.err(new CheckoutSessionExpired({ snapshot })),
-        ...(expired ? { event: expired.event } : {}),
-      };
+      throw new CheckoutSessionExpired(
+        snapshot,
+        expired ? [expired.update] : [],
+      );
     }
 
     const order = this.repository.getOrderBySessionId(session.id);
     if (order || session.phase === "completed") {
       return {
-        result: Result.ok(this.purchaseOutput("completed", snapshot, false)),
+        value: {
+          kind: "resolved",
+          response: this.purchaseOutput("completed", snapshot, false),
+        },
       };
     }
 
@@ -767,7 +641,10 @@ export class CheckoutService {
         details: {},
       });
       return {
-        result: Result.ok(this.purchaseOutput("pending", snapshot, true)),
+        value: {
+          kind: "resolved",
+          response: this.purchaseOutput("pending", snapshot, true),
+        },
       };
     }
 
@@ -778,9 +655,7 @@ export class CheckoutService {
       session.offer.currentVersion !== session.offer.acceptedVersion ||
       session.offer.currentTotalCents !== session.offer.acceptedTotalCents
     ) {
-      return {
-        result: Result.err(new PurchaseNotAllowed({ snapshot })),
-      };
+      throw new PurchaseNotAllowed(snapshot);
     }
 
     const attempt: PurchaseAttemptRecord = {
@@ -817,21 +692,22 @@ export class CheckoutService {
     const purchasingSnapshot = projectCheckout(purchasing, now);
 
     return {
-      result: Result.ok(
-        this.purchaseOutput("pending", purchasingSnapshot, false),
-      ),
-      event: { cause: "purchase_started", snapshot: purchasingSnapshot },
-      attempt,
+      value: {
+        kind: "authorize",
+        response: this.purchaseOutput("pending", purchasingSnapshot, false),
+        attempt,
+      },
+      updates: [{ cause: "purchase_started", snapshot: purchasingSnapshot }],
     };
   }
 
   private finalizePurchase(
     attempt: PurchaseAttemptRecord,
-    authorization: PaymentAuthorization,
+    authorization: PaymentOutcome,
     session: CheckoutSessionRecord,
     listing: ListingRecord,
     now: Date,
-  ): LockedOperationOutput<PurchaseOutput> {
+  ): Mutation<PurchaseOutput> {
     const currentAttempt = this.repository.getAttemptById(attempt.id);
     const snapshot = projectCheckout(session, now);
     const order = this.repository.getOrderBySessionId(session.id);
@@ -849,16 +725,16 @@ export class CheckoutService {
             ? this.dispositionForAttempt(currentAttempt)
             : "failed";
       return {
-        result: Result.ok(this.purchaseOutput(disposition, snapshot, false)),
+        value: this.purchaseOutput(disposition, snapshot, false),
       };
     }
 
-    if (Result.isError(authorization)) {
+    if (authorization === "failure") {
       return this.finalizeFailure(currentAttempt, session, listing, now);
     }
 
     if (listing.status !== "held" || listing.heldBySessionId !== session.id) {
-      return { result: Result.err(new PurchaseNotAllowed({ snapshot })) };
+      throw new PurchaseNotAllowed(snapshot);
     }
 
     const completedAttempt: PurchaseAttemptRecord = {
@@ -912,10 +788,8 @@ export class CheckoutService {
     const completedSnapshot = projectCheckout(completed, now);
 
     return {
-      result: Result.ok(
-        this.purchaseOutput("completed", completedSnapshot, false),
-      ),
-      event: { cause: "completed", snapshot: completedSnapshot },
+      value: this.purchaseOutput("completed", completedSnapshot, false),
+      updates: [{ cause: "completed", snapshot: completedSnapshot }],
     };
   }
 
@@ -924,7 +798,7 @@ export class CheckoutService {
     session: CheckoutSessionRecord,
     listing: ListingRecord,
     now: Date,
-  ): LockedOperationOutput<PurchaseOutput> {
+  ): Mutation<PurchaseOutput> {
     const failedAttempt: PurchaseAttemptRecord = {
       ...attempt,
       status: "failed",
@@ -976,8 +850,8 @@ export class CheckoutService {
 
     if (expired) {
       return {
-        result: Result.ok(this.purchaseOutput("failed", failedSnapshot, false)),
-        events: [
+        value: this.purchaseOutput("failed", failedSnapshot, false),
+        updates: [
           { cause: "purchase_failed", snapshot: failedSnapshot },
           { cause: "expired", snapshot: failedSnapshot },
         ],
@@ -985,8 +859,8 @@ export class CheckoutService {
     }
 
     return {
-      result: Result.ok(this.purchaseOutput("failed", failedSnapshot, false)),
-      event: { cause: "purchase_failed", snapshot: failedSnapshot },
+      value: this.purchaseOutput("failed", failedSnapshot, false),
+      updates: [{ cause: "purchase_failed", snapshot: failedSnapshot }],
     };
   }
 
@@ -1026,7 +900,7 @@ export class CheckoutService {
       },
     );
     if (output) {
-      this.publish(output.event.cause, output.event.snapshot);
+      this.publishUpdates([output.update]);
     }
   }
 
@@ -1077,7 +951,7 @@ export class CheckoutService {
     return {
       session: expired,
       snapshot,
-      event: { cause: "expired", snapshot },
+      update: { cause: "expired", snapshot },
     };
   }
 
@@ -1117,7 +991,7 @@ export class CheckoutService {
     return {
       session: abandoned,
       snapshot,
-      event: { cause: "abandoned", snapshot },
+      update: { cause: "abandoned", snapshot },
     };
   }
 
@@ -1155,9 +1029,5 @@ export class CheckoutService {
       payment: { status: "idle" },
       observedClients: [{ surface: input.surface, deviceId: input.deviceId }],
     };
-  }
-
-  private notFound(sessionId: string): CheckoutSessionNotFound {
-    return new CheckoutSessionNotFound({ sessionId });
   }
 }
