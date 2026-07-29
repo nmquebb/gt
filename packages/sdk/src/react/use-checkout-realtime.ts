@@ -6,12 +6,11 @@ import type {
   CheckoutClient,
   CheckoutClientContext,
 } from "../clients/checkout.client";
+import { applyCheckoutState, getCheckoutState } from "../cache/checkout-cache";
 import {
   createCheckoutSubscription,
   type RealtimeEnvironment,
 } from "../realtime/checkout-subscription";
-import { copyCheckoutClientContext } from "./checkout-context";
-import { useCheckoutStoreApi } from "./checkout-provider";
 
 interface UseCheckoutRealtimeOptions {
   client: Pick<CheckoutClient, "openEvents">;
@@ -36,17 +35,15 @@ export function useCheckoutRealtime({
   environment = defaultRealtimeEnvironment,
   monotonicNow = defaultMonotonicNow,
 }: UseCheckoutRealtimeOptions) {
-  const store = useCheckoutStoreApi();
   const queryClient = useQueryClient();
   const { deviceId, resumeToken, sessionId, surface } = context;
   const immutableContext = useMemo(
-    () =>
-      copyCheckoutClientContext({
-        deviceId,
-        resumeToken,
-        sessionId,
-        surface,
-      }),
+    () => ({
+      deviceId,
+      resumeToken,
+      sessionId,
+      surface,
+    }),
     [deviceId, resumeToken, sessionId, surface],
   );
   const onRelatedDataChanged = useCallback(() => {
@@ -62,9 +59,24 @@ export function useCheckoutRealtime({
         client,
         environment,
         monotonicNow,
-        getSnapshot: () => store.getState().snapshot,
+        getSnapshot: () => {
+          const state = getCheckoutState(
+            queryClient,
+            immutableContext.sessionId,
+          );
+          if (!state) {
+            throw new Error(
+              "Checkout state must be seeded before realtime starts.",
+            );
+          }
+
+          return state.snapshot;
+        },
         applySnapshot: (snapshot, clockAnchor) =>
-          store.getState().applySnapshot(snapshot, clockAnchor),
+          applyCheckoutState(queryClient, immutableContext.sessionId, {
+            snapshot,
+            clockAnchor,
+          }),
         onRelatedDataChanged,
       }),
     [
@@ -73,7 +85,7 @@ export function useCheckoutRealtime({
       immutableContext,
       monotonicNow,
       onRelatedDataChanged,
-      store,
+      queryClient,
     ],
   );
 

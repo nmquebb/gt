@@ -3,7 +3,6 @@
 import {
   formatUsd,
   useAcceptCheckoutOffer,
-  useCheckoutStore,
   type CheckoutClientContext,
 } from "@checkout/sdk";
 import { LoaderCircle } from "lucide-react";
@@ -51,14 +50,9 @@ function OfferAcceptance({ context, currentVersion }: OfferAcceptanceProps) {
 }
 
 export function CheckoutSummary() {
-  const event = useCheckoutStore((state) => state.snapshot.session.event);
-  const listing = useCheckoutStore((state) => state.snapshot.session.listing);
-  const offer = useCheckoutStore((state) => state.snapshot.session.offer);
-  const order = useCheckoutStore((state) => state.snapshot.session.order);
-  const allowedActions = useCheckoutStore(
-    (state) => state.snapshot.allowedActions,
-  );
-  const { context } = useCheckoutScreen();
+  const { checkout, context } = useCheckoutScreen();
+  const { allowedActions } = checkout.snapshot;
+  const { event, listing, offer, order } = checkout.snapshot.session;
   const requiresOfferReview = offer.currentVersion !== offer.acceptedVersion;
   const canAcceptOffer = allowedActions.includes("accept_offer");
 

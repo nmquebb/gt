@@ -1,7 +1,8 @@
 "use client";
 
-import { remainingHoldMs, useCheckoutStore } from "@checkout/sdk";
+import { remainingHoldMs } from "@checkout/sdk";
 import { useEffect, useState } from "react";
+import { useCheckoutScreen } from "@/lib/checkout-screen-context";
 
 function formatRemaining(remainingMs: number): string {
   const remainingSeconds = Math.ceil(remainingMs / 1_000);
@@ -12,7 +13,7 @@ function formatRemaining(remainingMs: number): string {
 }
 
 export function HoldCountdown() {
-  const clockAnchor = useCheckoutStore((state) => state.clockAnchor);
+  const { clockAnchor } = useCheckoutScreen().checkout;
   const [remainingMs, setRemainingMs] = useState(() =>
     remainingHoldMs(clockAnchor, performance.now()),
   );

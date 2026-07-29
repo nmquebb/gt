@@ -11,7 +11,6 @@ import {
   CheckoutSessionUpdatedEventSchema,
   type CheckoutSnapshot,
 } from "../contracts";
-import type { SnapshotApplicationResult } from "../stores/checkout/checkout.store";
 
 const RECONNECT_DELAY_MS = 1_000;
 
@@ -40,10 +39,7 @@ interface CheckoutSubscriptionOptions {
   environment: RealtimeEnvironment;
   monotonicNow: () => number;
   getSnapshot: () => CheckoutSnapshot;
-  applySnapshot: (
-    snapshot: CheckoutSnapshot,
-    clockAnchor?: ClockAnchor,
-  ) => SnapshotApplicationResult;
+  applySnapshot: (snapshot: CheckoutSnapshot, clockAnchor: ClockAnchor) => void;
   onRelatedDataChanged: () => void;
 }
 

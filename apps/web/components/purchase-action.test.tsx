@@ -1,8 +1,6 @@
 import { expect, test } from "bun:test";
 import {
-  CheckoutProvider,
   createCheckoutClient,
-  createCheckoutStore,
   type CheckoutClientContext,
   type CheckoutSnapshot,
 } from "@checkout/sdk";
@@ -62,7 +60,7 @@ const context: CheckoutClientContext = {
 
 function purchaseActionElement(snapshot: CheckoutSnapshot) {
   const monotonicNow = performance.now();
-  const store = createCheckoutStore({
+  const checkout = {
     snapshot,
     clockAnchor: {
       serverEpochAtAnchorMs: Date.parse(snapshot.serverNow),
@@ -70,13 +68,14 @@ function purchaseActionElement(snapshot: CheckoutSnapshot) {
       requestStartedAtMonotonicMs: monotonicNow,
       expiresAtEpochMs: Date.parse(snapshot.session.inventoryHold.expiresAt),
     },
-  });
+  };
   const client = createCheckoutClient({
     baseUrl: "https://checkout.test",
     fetch: globalThis.fetch,
     monotonicNow: () => monotonicNow,
   });
   const runtime = {
+    checkout,
     client,
     context,
     isInteractive: true,
@@ -85,11 +84,9 @@ function purchaseActionElement(snapshot: CheckoutSnapshot) {
   const queryClient = new QueryClient();
   return (
     <QueryClientProvider client={queryClient}>
-      <CheckoutProvider store={store}>
-        <CheckoutScreenProvider value={runtime}>
-          <PurchaseAction />
-        </CheckoutScreenProvider>
-      </CheckoutProvider>
+      <CheckoutScreenProvider value={runtime}>
+        <PurchaseAction />
+      </CheckoutScreenProvider>
     </QueryClientProvider>
   );
 }

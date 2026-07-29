@@ -1,10 +1,7 @@
 "use client";
 
-import {
-  CheckoutClientError,
-  useCheckoutStore,
-  useCheckoutStoreApi,
-} from "@checkout/sdk";
+import { applyCheckoutState, CheckoutClientError } from "@checkout/sdk";
+import { useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -16,9 +13,8 @@ export function CheckoutExit({
   isPurchasePending?: boolean;
 }) {
   const router = useRouter();
-  const store = useCheckoutStoreApi();
-  const status = useCheckoutStore((state) => state.snapshot.status);
-  const { client, context, isInteractive } = useCheckoutScreen();
+  const queryClient = useQueryClient();
+  const { checkout, client, context, isInteractive } = useCheckoutScreen();
   const [isLeaving, setIsLeaving] = useState(false);
   const [error, setError] = useState<string>();
 
@@ -27,7 +23,7 @@ export function CheckoutExit({
     setError(undefined);
     try {
       const result = await client.leave(context);
-      store.getState().applySnapshot(result.snapshot, result.clockAnchor);
+      applyCheckoutState(queryClient, context.sessionId, result);
       router.replace("/");
     } catch (caught) {
       if (
@@ -35,7 +31,10 @@ export function CheckoutExit({
         caught.snapshot &&
         caught.clockAnchor
       ) {
-        store.getState().applySnapshot(caught.snapshot, caught.clockAnchor);
+        applyCheckoutState(queryClient, context.sessionId, {
+          snapshot: caught.snapshot,
+          clockAnchor: caught.clockAnchor,
+        });
       }
       setError("Unable to leave this checkout. Please try again.");
       setIsLeaving(false);
@@ -49,7 +48,7 @@ export function CheckoutExit({
           !isInteractive ||
           isLeaving ||
           isPurchasePending ||
-          status === "purchase_pending"
+          checkout.snapshot.session.phase === "purchasing"
         }
         onClick={leaveCheckout}
         type="button"

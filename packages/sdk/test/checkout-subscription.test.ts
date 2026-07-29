@@ -10,8 +10,7 @@ import {
   createCheckoutSubscription,
   type RealtimeEnvironment,
 } from "../src/realtime/checkout-subscription";
-import { createCheckoutStore } from "../src/stores/checkout/checkout.store";
-import { checkoutSnapshotFixture, clockAnchorFixture } from "./fixtures";
+import { checkoutSnapshotFixture } from "./fixtures";
 
 class FakeEnvironment implements RealtimeEnvironment {
   private nextTimerId = 1;
@@ -100,10 +99,7 @@ function createHarness(
     surface: "web",
     deviceId: "web_1",
   };
-  const store = createCheckoutStore({
-    snapshot: initialSnapshot,
-    clockAnchor: clockAnchorFixture(initialSnapshot),
-  });
+  let snapshot = initialSnapshot;
   let relatedDataChanges = 0;
   let appliedAnchor: ClockAnchor | undefined;
   const subscription = createCheckoutSubscription({
@@ -118,10 +114,10 @@ function createHarness(
     },
     environment,
     monotonicNow: () => 500,
-    getSnapshot: () => store.getState().snapshot,
-    applySnapshot: (snapshot, anchor) => {
+    getSnapshot: () => snapshot,
+    applySnapshot: (nextSnapshot, anchor) => {
       appliedAnchor = anchor;
-      return store.getState().applySnapshot(snapshot, anchor);
+      snapshot = nextSnapshot;
     },
     onRelatedDataChanged: () => {
       relatedDataChanges += 1;
@@ -148,7 +144,12 @@ function createHarness(
     get socketCount() {
       return sockets.length;
     },
-    store,
+    applySnapshot(nextSnapshot: CheckoutSnapshot) {
+      snapshot = nextSnapshot;
+    },
+    get snapshot() {
+      return snapshot;
+    },
     subscription,
   };
 }
@@ -162,7 +163,7 @@ describe("checkout realtime subscription", () => {
 
     harness.socket.emit("message", realtimeEvent(newer));
 
-    expect(harness.store.getState().snapshot).toEqual(newer);
+    expect(harness.snapshot).toEqual(newer);
     expect(harness.appliedAnchor).toEqual({
       serverEpochAtAnchorMs: 1_785_171_600_000,
       monotonicAtAnchorMs: 500,
@@ -183,7 +184,7 @@ describe("checkout realtime subscription", () => {
       realtimeEvent(checkoutSnapshotFixture({ revision: 2 })),
     );
 
-    expect(harness.store.getState().snapshot.session.revision).toBe(2);
+    expect(harness.snapshot.session.revision).toBe(2);
     expect(harness.relatedDataChanges).toBe(0);
   });
 
@@ -196,9 +197,7 @@ describe("checkout realtime subscription", () => {
     });
     harness.subscription.start();
     harness.socket.emit("open");
-    harness.store
-      .getState()
-      .applySnapshot(terminal, clockAnchorFixture(terminal));
+    harness.applySnapshot(terminal);
 
     harness.socket.emit("message", realtimeEvent(terminal));
 
@@ -216,9 +215,7 @@ describe("checkout realtime subscription", () => {
     harness.subscription.start();
     harness.socket.emit("open");
     harness.socket.emit("close");
-    harness.store
-      .getState()
-      .applySnapshot(terminal, clockAnchorFixture(terminal));
+    harness.applySnapshot(terminal);
 
     harness.environment.runNext(1_000);
 

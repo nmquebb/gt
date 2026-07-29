@@ -1,8 +1,6 @@
 import { expect, test } from "bun:test";
 import {
-  CheckoutProvider,
   createCheckoutClient,
-  createCheckoutStore,
   type CheckoutClientContext,
   type CheckoutSnapshot,
 } from "@checkout/sdk";
@@ -27,18 +25,13 @@ const context: CheckoutClientContext = {
   surface: "web",
 };
 
-function checkoutSummaryElement(
-  store: ReturnType<typeof createCheckoutStore>,
-  runtime: CheckoutScreenRuntime,
-) {
+function checkoutSummaryElement(runtime: CheckoutScreenRuntime) {
   const queryClient = new QueryClient();
   return (
     <QueryClientProvider client={queryClient}>
-      <CheckoutProvider store={store}>
-        <CheckoutScreenProvider value={runtime}>
-          <CheckoutSummary />
-        </CheckoutScreenProvider>
-      </CheckoutProvider>
+      <CheckoutScreenProvider value={runtime}>
+        <CheckoutSummary />
+      </CheckoutScreenProvider>
     </QueryClientProvider>
   );
 }
@@ -82,7 +75,7 @@ test("does not offer price acceptance when a terminal snapshot has no allowed ac
     allowedActions: [],
     status: "completed",
   } satisfies CheckoutSnapshot;
-  const store = createCheckoutStore({
+  const checkout = {
     snapshot,
     clockAnchor: {
       serverEpochAtAnchorMs: Date.parse(snapshot.serverNow),
@@ -90,8 +83,9 @@ test("does not offer price acceptance when a terminal snapshot has no allowed ac
       requestStartedAtMonotonicMs: 900,
       expiresAtEpochMs: Date.parse(snapshot.session.inventoryHold.expiresAt),
     },
-  });
+  };
   const runtime = {
+    checkout,
     client: createCheckoutClient({
       baseUrl: "https://checkout.test",
       fetch: globalThis.fetch,
@@ -102,7 +96,7 @@ test("does not offer price acceptance when a terminal snapshot has no allowed ac
     realtimeStatus: "stopped",
   } satisfies CheckoutScreenRuntime;
 
-  const renderer = await render(checkoutSummaryElement(store, runtime));
+  const renderer = await render(checkoutSummaryElement(runtime));
   const html = JSON.stringify(renderer.toJSON());
 
   expect(html).not.toContain("Accept new price");
@@ -142,7 +136,7 @@ test("offers price acceptance when the server allows accept_offer", async () => 
     allowedActions: ["accept_offer"],
     status: "offer_review_required",
   } satisfies CheckoutSnapshot;
-  const store = createCheckoutStore({
+  const checkout = {
     snapshot,
     clockAnchor: {
       serverEpochAtAnchorMs: Date.parse(snapshot.serverNow),
@@ -150,8 +144,9 @@ test("offers price acceptance when the server allows accept_offer", async () => 
       requestStartedAtMonotonicMs: 900,
       expiresAtEpochMs: Date.parse(snapshot.session.inventoryHold.expiresAt),
     },
-  });
+  };
   const runtime = {
+    checkout,
     client: createCheckoutClient({
       baseUrl: "https://checkout.test",
       fetch: globalThis.fetch,
@@ -162,7 +157,7 @@ test("offers price acceptance when the server allows accept_offer", async () => 
     realtimeStatus: "connected",
   } satisfies CheckoutScreenRuntime;
 
-  const renderer = await render(checkoutSummaryElement(store, runtime));
+  const renderer = await render(checkoutSummaryElement(runtime));
   const html = JSON.stringify(renderer.toJSON());
 
   expect(html).toContain("Accept new price");

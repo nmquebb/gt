@@ -6,85 +6,110 @@ import type {
   CheckoutClientContext,
   CheckoutCommandResult,
 } from "../clients/checkout.client";
+import { applyCheckoutState } from "../cache/checkout-cache";
 import { CheckoutClientError } from "../clients/client.errors";
 import type { PaymentOutcome } from "../contracts";
-import type { CheckoutStore } from "../stores/checkout/checkout.store";
-import { useCheckoutStoreApi } from "./checkout-provider";
 
-function applyConflict(error: unknown, store: CheckoutStore): void {
+interface CheckoutMutationInvalidations {
+  activity: boolean;
+  listings: boolean;
+}
+
+interface CheckoutMutationOptions<TVariables, TResult> {
+  queryClient: ReturnType<typeof useQueryClient>;
+  sessionId: string;
+  operation: (variables: TVariables) => Promise<TResult>;
+  invalidations: CheckoutMutationInvalidations;
+}
+
+function checkoutMutationOptions<
+  TVariables,
+  TResult extends CheckoutCommandResult,
+>({
+  queryClient,
+  sessionId,
+  operation,
+  invalidations,
+}: CheckoutMutationOptions<TVariables, TResult>) {
+  return {
+    mutationFn: async (variables: TVariables): Promise<TResult> => {
+      const result = await operation(variables);
+      applyCheckoutState(queryClient, sessionId, result);
+
+      return result;
+    },
+    onError: (error: unknown): void =>
+      applyConflict(error, queryClient, sessionId),
+    onSuccess: (): void => {
+      if (invalidations.activity) {
+        void queryClient.invalidateQueries({
+          queryKey: ["checkout-activity", sessionId],
+        });
+      }
+      if (invalidations.listings) {
+        void queryClient.invalidateQueries({ queryKey: ["listings"] });
+      }
+    },
+  };
+}
+
+function useCheckoutCommandMutation<
+  TVariables,
+  TResult extends CheckoutCommandResult,
+>(
+  sessionId: string,
+  operation: (variables: TVariables) => Promise<TResult>,
+  invalidations: CheckoutMutationInvalidations,
+) {
+  const queryClient = useQueryClient();
+
+  return useMutation(
+    checkoutMutationOptions({
+      queryClient,
+      sessionId,
+      operation,
+      invalidations,
+    }),
+  );
+}
+
+function applyConflict(
+  error: unknown,
+  queryClient: ReturnType<typeof useQueryClient>,
+  sessionId: string,
+): void {
   if (
     error instanceof CheckoutClientError &&
     error.snapshot &&
     error.clockAnchor
   ) {
-    store.getState().applySnapshot(error.snapshot, error.clockAnchor);
-  }
-}
-
-function useApplyCanonicalSnapshot() {
-  const store = useCheckoutStoreApi();
-
-  return <T extends CheckoutCommandResult>(result: T): T => {
-    store.getState().applySnapshot(result.snapshot, result.clockAnchor);
-
-    return result;
-  };
-}
-
-function useApplyConflict() {
-  const store = useCheckoutStoreApi();
-
-  return (error: unknown): void => applyConflict(error, store);
-}
-
-function useInvalidateActivity(context: CheckoutClientContext) {
-  const queryClient = useQueryClient();
-
-  return (): void => {
-    void queryClient.invalidateQueries({
-      queryKey: ["checkout-activity", context.sessionId],
+    applyCheckoutState(queryClient, sessionId, {
+      snapshot: error.snapshot,
+      clockAnchor: error.clockAnchor,
     });
-  };
-}
-
-function useInvalidateListings() {
-  const queryClient = useQueryClient();
-
-  return (): void => {
-    void queryClient.invalidateQueries({ queryKey: ["listings"] });
-  };
+  }
 }
 
 export function useResumeCheckoutClient(
   client: Pick<CheckoutClient, "resume">,
   context: CheckoutClientContext,
 ) {
-  const applyCanonicalSnapshot = useApplyCanonicalSnapshot();
-  const applyErrorSnapshot = useApplyConflict();
-  const invalidateActivity = useInvalidateActivity(context);
-
-  return useMutation({
-    mutationFn: async () =>
-      applyCanonicalSnapshot(await client.resume(context)),
-    onError: applyErrorSnapshot,
-    onSuccess: invalidateActivity,
-  });
+  return useCheckoutCommandMutation(
+    context.sessionId,
+    (_variables: void) => client.resume(context),
+    { activity: true, listings: false },
+  );
 }
 
 export function useAcceptCheckoutOffer(
   client: Pick<CheckoutClient, "acceptOffer">,
   context: CheckoutClientContext,
 ) {
-  const applyCanonicalSnapshot = useApplyCanonicalSnapshot();
-  const applyErrorSnapshot = useApplyConflict();
-  const invalidateActivity = useInvalidateActivity(context);
-
-  return useMutation({
-    mutationFn: async (offerVersion: number) =>
-      applyCanonicalSnapshot(await client.acceptOffer(context, offerVersion)),
-    onError: applyErrorSnapshot,
-    onSuccess: invalidateActivity,
-  });
+  return useCheckoutCommandMutation(
+    context.sessionId,
+    (offerVersion: number) => client.acceptOffer(context, offerVersion),
+    { activity: true, listings: false },
+  );
 }
 
 export function usePurchaseCheckout(
@@ -92,58 +117,34 @@ export function usePurchaseCheckout(
   context: CheckoutClientContext,
   createIdempotencyKey: () => string = () => globalThis.crypto.randomUUID(),
 ) {
-  const applyCanonicalSnapshot = useApplyCanonicalSnapshot();
-  const applyErrorSnapshot = useApplyConflict();
-  const invalidateActivity = useInvalidateActivity(context);
-  const invalidateListings = useInvalidateListings();
-
-  return useMutation({
-    mutationFn: async () =>
-      applyCanonicalSnapshot(
-        await client.purchase(context, createIdempotencyKey()),
-      ),
-    onError: applyErrorSnapshot,
-    onSuccess: () => {
-      invalidateActivity();
-      invalidateListings();
-    },
-  });
+  return useCheckoutCommandMutation(
+    context.sessionId,
+    (_variables: void) => client.purchase(context, createIdempotencyKey()),
+    { activity: true, listings: true },
+  );
 }
 
 export function useRepriceCheckout(
   client: Pick<CheckoutClient, "reprice">,
   context: CheckoutClientContext,
 ) {
-  const applyCanonicalSnapshot = useApplyCanonicalSnapshot();
-  const applyErrorSnapshot = useApplyConflict();
-  const invalidateActivity = useInvalidateActivity(context);
-
-  return useMutation({
-    mutationFn: async (increaseCents: number | undefined) =>
-      applyCanonicalSnapshot(await client.reprice(context, increaseCents)),
-    onError: applyErrorSnapshot,
-    onSuccess: invalidateActivity,
-  });
+  return useCheckoutCommandMutation(
+    context.sessionId,
+    (increaseCents: number | undefined) =>
+      client.reprice(context, increaseCents),
+    { activity: true, listings: false },
+  );
 }
 
 export function useExpireCheckout(
   client: Pick<CheckoutClient, "expire">,
   context: CheckoutClientContext,
 ) {
-  const applyCanonicalSnapshot = useApplyCanonicalSnapshot();
-  const applyErrorSnapshot = useApplyConflict();
-  const invalidateActivity = useInvalidateActivity(context);
-  const invalidateListings = useInvalidateListings();
-
-  return useMutation({
-    mutationFn: async () =>
-      applyCanonicalSnapshot(await client.expire(context)),
-    onError: applyErrorSnapshot,
-    onSuccess: () => {
-      invalidateActivity();
-      invalidateListings();
-    },
-  });
+  return useCheckoutCommandMutation(
+    context.sessionId,
+    (_variables: void) => client.expire(context),
+    { activity: true, listings: true },
+  );
 }
 
 export function useSetNextPaymentOutcome(
@@ -160,10 +161,14 @@ export function useOpenIosSimulator(
   client: Pick<CheckoutClient, "openIosSimulator">,
   context: CheckoutClientContext,
 ) {
-  const invalidateActivity = useInvalidateActivity(context);
+  const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: () => client.openIosSimulator(context),
-    onSuccess: invalidateActivity,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({
+        queryKey: ["checkout-activity", context.sessionId],
+      });
+    },
   });
 }

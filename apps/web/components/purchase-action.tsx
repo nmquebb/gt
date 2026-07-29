@@ -1,10 +1,6 @@
 "use client";
 
-import {
-  remainingHoldMs,
-  useCheckoutStore,
-  usePurchaseCheckout,
-} from "@checkout/sdk";
+import { remainingHoldMs, usePurchaseCheckout } from "@checkout/sdk";
 import { LoaderCircle } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -15,12 +11,9 @@ export function PurchaseAction({
 }: {
   onPendingChange?: (isPending: boolean) => void;
 }) {
-  const allowedActions = useCheckoutStore(
-    (state) => state.snapshot.allowedActions,
-  );
-  const status = useCheckoutStore((state) => state.snapshot.status);
-  const clockAnchor = useCheckoutStore((state) => state.clockAnchor);
-  const { client, context, isInteractive } = useCheckoutScreen();
+  const { checkout, client, context, isInteractive } = useCheckoutScreen();
+  const { allowedActions, status } = checkout.snapshot;
+  const { clockAnchor } = checkout;
   const purchase = usePurchaseCheckout(client, context);
   const [remainingMs, setRemainingMs] = useState(() =>
     remainingHoldMs(clockAnchor, performance.now()),

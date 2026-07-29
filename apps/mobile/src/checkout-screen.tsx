@@ -1,22 +1,22 @@
 import { randomUUID } from "expo-crypto";
 import {
-  CheckoutProvider,
   checkoutCopy,
-  createCheckoutStore,
   formatUsd,
   remainingHoldMs,
   useAcceptCheckoutOffer,
   useCheckoutRealtime,
-  useCheckoutStore,
-  useCheckoutStoreApi,
+  useCheckoutState,
   usePurchaseCheckout,
   type CheckoutClient,
   type CheckoutClientContext,
   type CheckoutCommandResult,
+  type CheckoutSnapshot,
+  type CheckoutState,
+  type ClockAnchor,
   type RealtimeStatus,
 } from "@checkout/sdk";
 import { useNavigation } from "expo-router";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Pressable, Text, View } from "react-native";
 import {
   checkoutStatusPresentation,
@@ -80,15 +80,19 @@ function OfferAcceptance({
 
 interface CheckoutActionProps {
   action: "purchase" | "retry_purchase";
+  allowedActions: CheckoutSnapshot["allowedActions"];
   client: Pick<CheckoutClient, "purchase">;
+  clockAnchor: ClockAnchor;
   context: CheckoutClientContext;
 }
 
-function CheckoutAction({ action, client, context }: CheckoutActionProps) {
-  const allowedActions = useCheckoutStore(
-    (state) => state.snapshot.allowedActions,
-  );
-  const clockAnchor = useCheckoutStore((state) => state.clockAnchor);
+function CheckoutAction({
+  action,
+  allowedActions,
+  client,
+  clockAnchor,
+  context,
+}: CheckoutActionProps) {
   const purchase = usePurchaseCheckout(client, context, randomUUID);
   const [remainingMs, setRemainingMs] = useState(() =>
     remainingHoldMs(clockAnchor, performance.now()),
@@ -145,10 +149,11 @@ function CheckoutPurchaseProgress() {
 
 function CheckoutStatusPanel({
   realtimeStatus,
+  status,
 }: {
   realtimeStatus: RealtimeStatus;
+  status: CheckoutSnapshot["status"];
 }) {
-  const status = useCheckoutStore((state) => state.snapshot.status);
   const presentation = checkoutStatusPresentation[status];
   const copy = checkoutCopy[status];
 
@@ -167,18 +172,21 @@ function CheckoutStatusPanel({
 }
 
 function CheckoutContent({
+  checkout,
   client,
   context,
 }: {
+  checkout: CheckoutState;
   client: CheckoutScreenClient;
   context: CheckoutClientContext;
 }) {
-  const snapshot = useCheckoutStore((state) => state.snapshot);
+  const { clockAnchor, snapshot } = checkout;
   const { event, listing, offer, order } = snapshot.session;
   const allowedActions = snapshot.allowedActions;
-  const store = useCheckoutStoreApi();
   const navigation = useNavigation();
   const realtimeStatus = useCheckoutRealtime({ client, context });
+  const phaseRef = useRef(snapshot.session.phase);
+  phaseRef.current = snapshot.session.phase;
   const requiresOfferReview = offer.currentVersion !== offer.acceptedVersion;
   const purchaseAction = allowedActions.includes("retry_purchase")
     ? "retry_purchase"
@@ -194,11 +202,11 @@ function CheckoutContent({
   useEffect(
     () =>
       navigation.addListener("beforeRemove", () => {
-        if (store.getState().snapshot.session.phase === "active") {
+        if (phaseRef.current === "active") {
           void client.leave(context).catch(() => undefined);
         }
       }),
-    [client, context, navigation, store],
+    [client, context, navigation],
   );
 
   return (
@@ -241,11 +249,14 @@ function CheckoutContent({
         )}
       </View>
 
-      <CheckoutStatusPanel realtimeStatus={realtimeStatus} />
+      <CheckoutStatusPanel
+        realtimeStatus={realtimeStatus}
+        status={snapshot.status}
+      />
 
       {isTerminal ? null : (
         <View style={[styles.card, styles.actionCard]}>
-          <HoldCountdown />
+          <HoldCountdown clockAnchor={clockAnchor} />
           {purchaseAction === undefined ? (
             snapshot.status === "purchase_pending" ? (
               <CheckoutPurchaseProgress />
@@ -253,7 +264,9 @@ function CheckoutContent({
           ) : (
             <CheckoutAction
               action={purchaseAction}
+              allowedActions={allowedActions}
               client={client}
+              clockAnchor={clockAnchor}
               context={context}
             />
           )}
@@ -272,18 +285,11 @@ interface CheckoutScreenProps {
 export function CheckoutScreen({
   client,
   context,
-  initialResult: initial,
+  initialResult,
 }: CheckoutScreenProps) {
-  const [store] = useState(() =>
-    createCheckoutStore({
-      clockAnchor: initial.clockAnchor,
-      snapshot: initial.snapshot,
-    }),
-  );
+  const checkout = useCheckoutState(context.sessionId, initialResult);
 
   return (
-    <CheckoutProvider store={store}>
-      <CheckoutContent client={client} context={context} />
-    </CheckoutProvider>
+    <CheckoutContent checkout={checkout} client={client} context={context} />
   );
 }

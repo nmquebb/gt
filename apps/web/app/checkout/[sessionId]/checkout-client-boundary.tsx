@@ -2,18 +2,20 @@
 
 import { z } from "zod";
 import {
+  applyCheckoutState,
   CheckoutClientError,
-  CheckoutProvider,
   createCheckoutClient,
-  createCheckoutStore,
   hydrateClockHandoff,
   useCheckoutRealtime,
+  useCheckoutState,
   type CheckoutClient,
   type CheckoutClientContext,
   type CheckoutSnapshot,
+  type CheckoutState,
   type ClockHandoff,
   type RealtimeStatus,
 } from "@checkout/sdk";
+import { useQueryClient } from "@tanstack/react-query";
 import dynamic from "next/dynamic";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
@@ -140,12 +142,12 @@ function CheckoutSubtree({
   snapshot,
   token,
 }: CheckoutSubtreeProps) {
-  const [store] = useState(() =>
-    createCheckoutStore({
-      snapshot,
-      clockAnchor: hydrateClockHandoff(clockHandoff, performance.now()),
-    }),
-  );
+  const queryClient = useQueryClient();
+  const [initialCheckout] = useState<CheckoutState>(() => ({
+    snapshot,
+    clockAnchor: hydrateClockHandoff(clockHandoff, performance.now()),
+  }));
+  const checkout = useCheckoutState(sessionId, initialCheckout);
   const [client] = useState(
     () =>
       clientOverride ??
@@ -185,7 +187,7 @@ function CheckoutSubtree({
         if (!active) {
           return;
         }
-        store.getState().applySnapshot(result.snapshot, result.clockAnchor);
+        applyCheckoutState(queryClient, sessionId, result);
         setResumeState({ kind: "ready", context });
       },
       (error: unknown) => {
@@ -213,7 +215,7 @@ function CheckoutSubtree({
     return () => {
       active = false;
     };
-  }, [client, resumeAttempt, sessionId, store, token]);
+  }, [client, queryClient, resumeAttempt, sessionId, token]);
 
   function retryResume() {
     setRealtimeStatus("idle");
@@ -223,6 +225,7 @@ function CheckoutSubtree({
 
   if (resumeState.kind === "pending") {
     const runtime: CheckoutScreenRuntime = {
+      checkout,
       client,
       context: serverRenderContext,
       isInteractive: false,
@@ -230,17 +233,15 @@ function CheckoutSubtree({
     };
 
     return (
-      <CheckoutProvider store={store}>
-        <CheckoutScreenProvider value={runtime}>
-          <section aria-label="Checkout" className="space-y-5">
-            <CheckoutExit />
-            <CheckoutSummary />
-            <Card className="space-y-4 p-5 shadow-sm">
-              <HoldCountdown />
-            </Card>
-          </section>
-        </CheckoutScreenProvider>
-      </CheckoutProvider>
+      <CheckoutScreenProvider value={runtime}>
+        <section aria-label="Checkout" className="space-y-5">
+          <CheckoutExit />
+          <CheckoutSummary />
+          <Card className="space-y-4 p-5 shadow-sm">
+            <HoldCountdown />
+          </Card>
+        </section>
+      </CheckoutScreenProvider>
     );
   }
   if (resumeState.kind === "error") {
@@ -254,6 +255,7 @@ function CheckoutSubtree({
   }
 
   const runtime: CheckoutScreenRuntime = {
+    checkout,
     client,
     context: resumeState.context,
     isInteractive: true,
@@ -261,28 +263,26 @@ function CheckoutSubtree({
   };
 
   return (
-    <CheckoutProvider store={store}>
-      <CheckoutScreenProvider value={runtime}>
-        <CheckoutRealtime
-          client={client}
-          context={resumeState.context}
-          onStatusChange={setRealtimeStatus}
+    <CheckoutScreenProvider value={runtime}>
+      <CheckoutRealtime
+        client={client}
+        context={resumeState.context}
+        onStatusChange={setRealtimeStatus}
+      />
+      <section aria-label="Checkout" className="space-y-5">
+        <CheckoutExit isPurchasePending={isPurchasePending} />
+        <CheckoutSummary />
+        <CheckoutDevelopmentBoundary
+          activityTimeline={<ActivityTimeline />}
+          holdCountdown={<HoldCountdown />}
+          openInAppButton={<OpenInAppButton />}
+          purchaseAction={
+            <PurchaseAction onPendingChange={setIsPurchasePending} />
+          }
+          scenarioControls={<ScenarioControls />}
         />
-        <section aria-label="Checkout" className="space-y-5">
-          <CheckoutExit isPurchasePending={isPurchasePending} />
-          <CheckoutSummary />
-          <CheckoutDevelopmentBoundary
-            activityTimeline={<ActivityTimeline />}
-            holdCountdown={<HoldCountdown />}
-            openInAppButton={<OpenInAppButton />}
-            purchaseAction={
-              <PurchaseAction onPendingChange={setIsPurchasePending} />
-            }
-            scenarioControls={<ScenarioControls />}
-          />
-        </section>
-      </CheckoutScreenProvider>
-    </CheckoutProvider>
+      </section>
+    </CheckoutScreenProvider>
   );
 }
 

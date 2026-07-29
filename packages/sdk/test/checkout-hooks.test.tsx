@@ -6,13 +6,15 @@ import type {
   CheckoutClient,
   CheckoutClientContext,
 } from "../src/clients/checkout.client";
+import {
+  applyCheckoutState,
+  getCheckoutState,
+} from "../src/cache/checkout-cache";
 import { CheckoutClientError } from "../src/clients/client.errors";
-import { CheckoutProvider } from "../src/react/checkout-provider";
 import {
   useAcceptCheckoutOffer,
   usePurchaseCheckout,
 } from "../src/react/use-checkout-commands";
-import { createCheckoutStore } from "../src/stores/checkout/checkout.store";
 import { checkoutSnapshotFixture, clockAnchorFixture } from "./fixtures";
 import { createReactTestHarness } from "../test-utils/react-test-renderer";
 
@@ -104,16 +106,12 @@ function PurchaseHook({
 function providers({
   children,
   queryClient,
-  store,
 }: {
   children: ReactElement;
   queryClient: QueryClient;
-  store: ReturnType<typeof createCheckoutStore>;
 }) {
   return (
-    <QueryClientProvider client={queryClient}>
-      <CheckoutProvider store={store}>{children}</CheckoutProvider>
-    </QueryClientProvider>
+    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
   );
 }
 
@@ -132,11 +130,12 @@ describe("checkout command React hooks", () => {
     const acceptedAnchor = clockAnchorFixture(acceptedSnapshot, {
       requestStartedAtMonotonicMs: 200,
     });
-    const store = createCheckoutStore({
+    const initialState = {
       snapshot: initialSnapshot,
       clockAnchor: clockAnchorFixture(initialSnapshot),
-    });
+    };
     const queryClient = createQueryClient();
+    applyCheckoutState(queryClient, context.sessionId, initialState);
     seedRelatedQueries(queryClient);
     let mutation!: AcceptMutation;
     const client = {
@@ -148,7 +147,6 @@ describe("checkout command React hooks", () => {
     await render(
       providers({
         queryClient,
-        store,
         children: (
           <AcceptHook client={client} onRender={(next) => (mutation = next)} />
         ),
@@ -160,8 +158,10 @@ describe("checkout command React hooks", () => {
       await flushObserverNotifications();
     });
 
-    expect(store.getState().snapshot).toBe(acceptedSnapshot);
-    expect(store.getState().clockAnchor).toBe(acceptedAnchor);
+    expect(getCheckoutState(queryClient, context.sessionId)).toEqual({
+      snapshot: acceptedSnapshot,
+      clockAnchor: acceptedAnchor,
+    });
     expectQueryInvalidated(
       queryClient,
       ["checkout-activity", context.sessionId],
@@ -180,11 +180,12 @@ describe("checkout command React hooks", () => {
     const conflictAnchor = clockAnchorFixture(conflictSnapshot, {
       requestStartedAtMonotonicMs: 300,
     });
-    const store = createCheckoutStore({
+    const initialState = {
       snapshot: initialSnapshot,
       clockAnchor: clockAnchorFixture(initialSnapshot),
-    });
+    };
     const queryClient = createQueryClient();
+    applyCheckoutState(queryClient, context.sessionId, initialState);
     seedRelatedQueries(queryClient);
     let mutation!: AcceptMutation;
     const error = new CheckoutClientError(
@@ -201,7 +202,6 @@ describe("checkout command React hooks", () => {
     await render(
       providers({
         queryClient,
-        store,
         children: (
           <AcceptHook client={client} onRender={(next) => (mutation = next)} />
         ),
@@ -215,8 +215,10 @@ describe("checkout command React hooks", () => {
 
     expect(mutation.error).toBeInstanceOf(CheckoutClientError);
     expect(mutation.error).toBe(error);
-    expect(store.getState().snapshot).toBe(conflictSnapshot);
-    expect(store.getState().clockAnchor).toBe(conflictAnchor);
+    expect(getCheckoutState(queryClient, context.sessionId)).toEqual({
+      snapshot: conflictSnapshot,
+      clockAnchor: conflictAnchor,
+    });
     expectQueryInvalidated(
       queryClient,
       ["checkout-activity", context.sessionId],
@@ -234,11 +236,12 @@ describe("checkout command React hooks", () => {
       monotonicAtAnchorMs: 500,
       requestStartedAtMonotonicMs: 400,
     });
-    const store = createCheckoutStore({
+    const initialState = {
       snapshot: initialSnapshot,
       clockAnchor: initialAnchor,
-    });
+    };
     const queryClient = createQueryClient();
+    applyCheckoutState(queryClient, context.sessionId, initialState);
     seedRelatedQueries(queryClient);
     let mutation!: AcceptMutation;
     const client = {
@@ -250,7 +253,6 @@ describe("checkout command React hooks", () => {
     await render(
       providers({
         queryClient,
-        store,
         children: (
           <AcceptHook client={client} onRender={(next) => (mutation = next)} />
         ),
@@ -262,8 +264,10 @@ describe("checkout command React hooks", () => {
       await flushObserverNotifications();
     });
 
-    expect(store.getState().snapshot).toBe(initialSnapshot);
-    expect(store.getState().clockAnchor).toBe(refreshedAnchor);
+    expect(getCheckoutState(queryClient, context.sessionId)).toEqual({
+      snapshot: initialSnapshot,
+      clockAnchor: refreshedAnchor,
+    });
   });
 
   test("each purchase mutation gets one new key and successful purchases invalidate related queries", async () => {
@@ -282,11 +286,12 @@ describe("checkout command React hooks", () => {
     const completedAnchor = clockAnchorFixture(completedSnapshot, {
       requestStartedAtMonotonicMs: 200,
     });
-    const store = createCheckoutStore({
-      snapshot: checkoutSnapshotFixture({ revision: 1 }),
-      clockAnchor: clockAnchorFixture(checkoutSnapshotFixture({ revision: 1 })),
-    });
+    const initialSnapshot = checkoutSnapshotFixture({ revision: 1 });
     const queryClient = createQueryClient();
+    applyCheckoutState(queryClient, context.sessionId, {
+      snapshot: initialSnapshot,
+      clockAnchor: clockAnchorFixture(initialSnapshot),
+    });
     seedRelatedQueries(queryClient);
     let mutation!: PurchaseMutation;
     let attempts = 0;
@@ -315,7 +320,6 @@ describe("checkout command React hooks", () => {
     await render(
       providers({
         queryClient,
-        store,
         children: (
           <PurchaseHook
             client={client}
@@ -347,7 +351,12 @@ describe("checkout command React hooks", () => {
       "11111111-1111-4111-8111-111111111111",
       "22222222-2222-4222-8222-222222222222",
     ]);
-    expect(store.getState().snapshot).toBe(completedSnapshot);
+    expect(getCheckoutState(queryClient, context.sessionId)?.snapshot).toEqual(
+      completedSnapshot,
+    );
+    expect(
+      getCheckoutState(queryClient, context.sessionId)?.clockAnchor,
+    ).toEqual(completedAnchor);
     expectQueryInvalidated(
       queryClient,
       ["checkout-activity", context.sessionId],

@@ -1,4 +1,4 @@
-import { remainingHoldMs, useCheckoutStore } from "@checkout/sdk";
+import { remainingHoldMs, type ClockAnchor } from "@checkout/sdk";
 import { useEffect, useState } from "react";
 import { Text, View } from "react-native";
 import { styles } from "./theme";
@@ -11,8 +11,7 @@ function formatRemaining(remainingMs: number): string {
   return `${minutes}:${seconds.toString().padStart(2, "0")}`;
 }
 
-export function HoldCountdown() {
-  const clockAnchor = useCheckoutStore((state) => state.clockAnchor);
+export function HoldCountdown({ clockAnchor }: { clockAnchor: ClockAnchor }) {
   const [remainingMs, setRemainingMs] = useState(() =>
     remainingHoldMs(clockAnchor, performance.now()),
   );

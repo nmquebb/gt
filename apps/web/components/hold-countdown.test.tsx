@@ -1,10 +1,13 @@
 import { afterEach, expect, test } from "bun:test";
 import {
-  CheckoutProvider,
-  createCheckoutStore,
+  createCheckoutClient,
   type CheckoutSnapshot,
   type ClockAnchor,
 } from "@checkout/sdk";
+import {
+  CheckoutScreenProvider,
+  type CheckoutScreenRuntime,
+} from "@/lib/checkout-screen-context";
 import { act } from "react-test-renderer";
 import { HoldCountdown } from "./hold-countdown";
 import {
@@ -122,11 +125,27 @@ function anchorWithRemaining(remainingMs: number): ClockAnchor {
 const { render } = createReactTestHarness();
 
 function holdCountdownElement(clockAnchor: ClockAnchor) {
-  const store = createCheckoutStore({ snapshot, clockAnchor });
+  const runtime = {
+    checkout: { snapshot, clockAnchor },
+    client: createCheckoutClient({
+      baseUrl: "https://checkout.test",
+      fetch: globalThis.fetch,
+      monotonicNow: () => 1_000,
+    }),
+    context: {
+      deviceId: "web_1",
+      resumeToken: "secret",
+      sessionId: snapshot.session.id,
+      surface: "web",
+    },
+    isInteractive: true,
+    realtimeStatus: "connected",
+  } satisfies CheckoutScreenRuntime;
+
   return (
-    <CheckoutProvider store={store}>
+    <CheckoutScreenProvider value={runtime}>
       <HoldCountdown />
-    </CheckoutProvider>
+    </CheckoutScreenProvider>
   );
 }
 

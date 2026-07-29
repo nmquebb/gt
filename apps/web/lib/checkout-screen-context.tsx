@@ -4,10 +4,12 @@ import { createContext, useContext, type ReactNode } from "react";
 import type {
   CheckoutClient,
   CheckoutClientContext,
+  CheckoutState,
   RealtimeStatus,
 } from "@checkout/sdk";
 
 export interface CheckoutScreenRuntime {
+  checkout: CheckoutState;
   client: CheckoutClient;
   context: CheckoutClientContext;
   isInteractive: boolean;

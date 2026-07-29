@@ -7,11 +7,13 @@ import type {
   RealtimeSocket,
   RealtimeSocketEvent,
 } from "../src/clients/checkout.client";
+import {
+  applyCheckoutState,
+  getCheckoutState,
+} from "../src/cache/checkout-cache";
 import type { CheckoutSnapshot } from "../src/contracts";
-import { CheckoutProvider } from "../src/react/checkout-provider";
 import { useCheckoutRealtime } from "../src/react/use-checkout-realtime";
 import type { RealtimeEnvironment } from "../src/realtime/checkout-subscription";
-import { createCheckoutStore } from "../src/stores/checkout/checkout.store";
 import { checkoutSnapshotFixture, clockAnchorFixture } from "./fixtures";
 import { createReactTestHarness } from "../test-utils/react-test-renderer";
 
@@ -151,25 +153,24 @@ test("stops reconnecting for terminal snapshots", async () => {
   };
   const environment = new FakeEnvironment();
   const socket = new FakeSocket();
-  const store = createCheckoutStore({
+  const initialState = {
     snapshot: initial,
     clockAnchor: clockAnchorFixture(initial),
-  });
+  };
   const queryClient = new QueryClient({
     defaultOptions: {
       mutations: { retry: false },
       queries: { retry: false },
     },
   });
+  applyCheckoutState(queryClient, context.sessionId, initialState);
   const renderer = await render(
     <QueryClientProvider client={queryClient}>
-      <CheckoutProvider store={store}>
-        <RealtimeStatus
-          context={context}
-          environment={environment}
-          socket={socket}
-        />
-      </CheckoutProvider>
+      <RealtimeStatus
+        context={context}
+        environment={environment}
+        socket={socket}
+      />
     </QueryClientProvider>,
   );
   await act(async () => {
@@ -178,7 +179,9 @@ test("stops reconnecting for terminal snapshots", async () => {
     socket.emit("close");
   });
 
-  expect(store.getState().snapshot).toEqual(terminal);
+  expect(getCheckoutState(queryClient, context.sessionId)?.snapshot).toEqual(
+    terminal,
+  );
   expect(renderedStatus(renderer)).toBe("stopped");
   expect(environment.activeTimerCount).toBe(0);
 });
@@ -192,21 +195,20 @@ test("uses the default timer environment when a socket disconnects", async () =>
     deviceId: "mobile_1",
   };
   const socket = new FakeSocket();
-  const store = createCheckoutStore({
+  const initialState = {
     snapshot: initial,
     clockAnchor: clockAnchorFixture(initial),
-  });
+  };
   const queryClient = new QueryClient({
     defaultOptions: {
       mutations: { retry: false },
       queries: { retry: false },
     },
   });
+  applyCheckoutState(queryClient, context.sessionId, initialState);
   const renderer = await render(
     <QueryClientProvider client={queryClient}>
-      <CheckoutProvider store={store}>
-        <DefaultEnvironmentRealtimeStatus context={context} socket={socket} />
-      </CheckoutProvider>
+      <DefaultEnvironmentRealtimeStatus context={context} socket={socket} />
     </QueryClientProvider>,
   );
 

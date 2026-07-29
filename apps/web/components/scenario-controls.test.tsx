@@ -1,8 +1,6 @@
 import { expect, test } from "bun:test";
 import {
-  CheckoutProvider,
   createCheckoutClient,
-  createCheckoutStore,
   type CheckoutClientContext,
   type CheckoutSnapshot,
 } from "@checkout/sdk";
@@ -11,9 +9,7 @@ import {
   CheckoutScreenProvider,
   type CheckoutScreenRuntime,
 } from "@/lib/checkout-screen-context";
-import {
-  createReactTestHarness,
-} from "@checkout/sdk/test-utils/react-test-renderer";
+import { createReactTestHarness } from "@checkout/sdk/test-utils/react-test-renderer";
 import { ScenarioControls } from "./scenario-controls";
 
 (
@@ -64,7 +60,7 @@ test("renders generic payment outcomes without a reset action", async () => {
     fetch: globalThis.fetch,
     monotonicNow: () => 1_000,
   });
-  const store = createCheckoutStore({
+  const checkout = {
     snapshot,
     clockAnchor: {
       serverEpochAtAnchorMs: Date.parse(snapshot.serverNow),
@@ -72,8 +68,9 @@ test("renders generic payment outcomes without a reset action", async () => {
       requestStartedAtMonotonicMs: 900,
       expiresAtEpochMs: Date.parse(snapshot.session.inventoryHold.expiresAt),
     },
-  });
+  };
   const runtime = {
+    checkout,
     client,
     context,
     isInteractive: true,
@@ -83,11 +80,9 @@ test("renders generic payment outcomes without a reset action", async () => {
 
   const renderer = await render(
     <QueryClientProvider client={queryClient}>
-      <CheckoutProvider store={store}>
-        <CheckoutScreenProvider value={runtime}>
-          <ScenarioControls />
-        </CheckoutScreenProvider>
-      </CheckoutProvider>
+      <CheckoutScreenProvider value={runtime}>
+        <ScenarioControls />
+      </CheckoutScreenProvider>
     </QueryClientProvider>,
   );
   const markup = JSON.stringify(renderer.toJSON());

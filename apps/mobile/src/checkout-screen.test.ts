@@ -37,8 +37,8 @@ void mock.module("react-native", () => ({
   View: "View",
 }));
 
-void mock.module("expo-router", () => ({
-  useNavigation: () => ({
+void mock.module("expo-router", () => {
+  const navigation = {
     addListener: (event: string, listener: NavigationListener) => {
       if (event === "beforeRemove") {
         beforeRemoveListener = listener;
@@ -51,8 +51,10 @@ void mock.module("expo-router", () => ({
       };
     },
     dispatch: () => undefined,
-  }),
-}));
+  };
+
+  return { useNavigation: () => navigation };
+});
 
 void mock.module("expo-crypto", () => ({
   randomUUID: () => "purchase-key",
@@ -227,6 +229,32 @@ function getByText(root: ReactTestInstance, expected: string | RegExp) {
   return match;
 }
 
+async function waitForText(
+  root: ReactTestInstance,
+  expected: string | RegExp,
+): Promise<ReactTestInstance> {
+  const timeoutAt = Date.now() + 5_000;
+
+  while (true) {
+    const match = findText(root, expected);
+    if (match !== undefined) {
+      return match;
+    }
+    if (Date.now() >= timeoutAt) {
+      throw new Error(
+        `Timed out waiting for rendered text ${String(expected)}`,
+      );
+    }
+
+    await act(
+      async () =>
+        await new Promise<void>((resolve) => {
+          globalThis.setTimeout(resolve, 10);
+        }),
+    );
+  }
+}
+
 function getButtonByText(root: ReactTestInstance, expected: string) {
   const match = root.findAll(
     (instance) =>
@@ -267,15 +295,17 @@ test("renders resumed checkout and applies a realtime completion", async () => {
       initialResult,
     }),
   );
+  const navigationListener = beforeRemoveListener;
   expect(getByText(renderer.root, "Your seat is held")).toBeDefined();
 
   await act(async () => {
     socket.message(completedEvent);
   });
-  await flush();
 
-  expect(getByText(renderer.root, "You’re going")).toBeDefined();
+  expect(await waitForText(renderer.root, "You’re going")).toBeDefined();
   expect(getByText(renderer.root, /Order ord_/)).toBeDefined();
+  navigationListener?.();
+  expect(leaveCalls).toEqual([]);
 });
 
 test("notifies active checkout leave without blocking native navigation", async () => {

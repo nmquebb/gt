@@ -5,7 +5,6 @@ import {
   useExpireCheckout,
   useRepriceCheckout,
   useSetNextPaymentOutcome,
-  useCheckoutStore,
 } from "@checkout/sdk";
 import { Check, LoaderCircle } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -14,11 +13,11 @@ import { Collapsible } from "@/components/ui/collapsible";
 import { useCheckoutScreen } from "@/lib/checkout-screen-context";
 
 export function ScenarioControls() {
-  const { client, context } = useCheckoutScreen();
+  const { checkout, client, context } = useCheckoutScreen();
   const reprice = useRepriceCheckout(client, context);
   const expire = useExpireCheckout(client, context);
   const setNextOutcome = useSetNextPaymentOutcome(client, context);
-  const status = useCheckoutStore((state) => state.snapshot.status);
+  const status = checkout.snapshot.status;
   const [selectedOutcome, setSelectedOutcome] = useState<PaymentOutcome>();
 
   useEffect(() => {

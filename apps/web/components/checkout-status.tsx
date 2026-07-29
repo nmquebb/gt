@@ -3,7 +3,6 @@
 import {
   checkoutCopy,
   type CheckoutStatus as CheckoutStatusValue,
-  useCheckoutStore,
 } from "@checkout/sdk";
 import {
   CircleAlert,
@@ -69,8 +68,8 @@ const statusPresentation: Record<
 };
 
 export function CheckoutStatus() {
-  const status = useCheckoutStore((state) => state.snapshot.status);
-  const { realtimeStatus } = useCheckoutScreen();
+  const { checkout, realtimeStatus } = useCheckoutScreen();
+  const status = checkout.snapshot.status;
   const presentation = statusPresentation[status];
   const Icon = presentation.icon;
 
