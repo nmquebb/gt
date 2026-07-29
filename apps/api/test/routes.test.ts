@@ -108,16 +108,14 @@ describe("checkout routes", () => {
     const harness = createApiTestHarness();
     const app = createApp(harness.appDependencies);
 
-    const health = await app.request("/v1/health", {
-      headers: { origin: "http://127.0.0.1:8000" },
+    const health = await app.request("/v1/health");
+    const listings = await app.request("/v1/listings", {
+      headers: { origin: "https://prototype-review.example" },
     });
-    const listings = await app.request("/v1/listings");
 
     expect(health.status).toBe(200);
     expect(health.headers.get("x-request-id")).toBeNull();
-    expect(health.headers.get("access-control-allow-origin")).toBe(
-      "http://127.0.0.1:8000",
-    );
+    expect(listings.headers.get("access-control-allow-origin")).toBe("*");
     expect(await health.json()).toEqual({ status: "ok" });
     expect(listings.status).toBe(200);
     const body = await listings.json();

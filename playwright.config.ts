@@ -9,8 +9,7 @@ export default defineConfig({
       reuseExistingServer: false,
     },
     {
-      command:
-        "API_INTERNAL_URL=http://127.0.0.1:3000 NEXT_PUBLIC_API_URL=http://127.0.0.1:3000 bun run dev:web",
+      command: "bun run dev:web",
       url: "http://127.0.0.1:8000",
       reuseExistingServer: false,
     },

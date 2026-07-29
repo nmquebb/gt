@@ -121,7 +121,6 @@ export function createApiTestHarness({
 
   const appDependencies: AppDependencies = {
     checkoutService: checkout,
-    webBaseUrl: "http://127.0.0.1:8000",
     realtimeHub,
     paymentScenarios: payment,
     iosSimulatorLauncher,

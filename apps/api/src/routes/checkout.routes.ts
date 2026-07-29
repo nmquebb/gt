@@ -1,7 +1,7 @@
 import { zValidator } from "@hono/zod-validator";
 import { Hono, type Context } from "hono";
 import { z } from "zod";
-import type { AppDependencies, AppEnv } from "../app";
+import type { AppDependencies } from "../app";
 import {
   AcceptOfferRequestSchema,
   CreateCheckoutSessionRequestSchema,
@@ -36,7 +36,7 @@ function token(context: Context): string | undefined {
 }
 
 export function createCheckoutRoutes(dependencies: AppDependencies) {
-  return new Hono<AppEnv>()
+  return new Hono()
     .post(
       "/checkout-sessions",
       zValidator("json", CreateCheckoutSessionRequestSchema, invalid),

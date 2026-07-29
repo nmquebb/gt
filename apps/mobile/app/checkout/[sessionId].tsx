@@ -16,7 +16,7 @@ import { getMobileDeviceId } from "../../src/device-id";
 import { ScreenShell } from "../../src/screen-shell";
 import { styles } from "../../src/theme";
 
-const apiUrl = process.env.EXPO_PUBLIC_API_URL ?? "http://127.0.0.1:3000";
+const apiUrl = "http://127.0.0.1:3000";
 
 type ResumeFailure = "unauthorized" | "not-found" | "offline" | "error";
 

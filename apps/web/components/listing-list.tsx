@@ -9,7 +9,7 @@ import { Card } from "@/components/ui/card";
 import { formatUsd } from "@/lib/format";
 import { listingsQueryOptions } from "@/lib/query-client";
 
-const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:3000";
+const apiUrl = "http://127.0.0.1:3000";
 
 function formatAvailability(status: "available" | "held" | "sold") {
   return status.charAt(0).toUpperCase() + status.slice(1);

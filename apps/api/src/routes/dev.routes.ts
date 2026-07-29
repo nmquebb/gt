@@ -1,7 +1,7 @@
 import { zValidator } from "@hono/zod-validator";
 import { Hono, type Context } from "hono";
 import { z } from "zod";
-import type { AppDependencies, AppEnv } from "../app";
+import type { AppDependencies } from "../app";
 import { PaymentOutcomeSchema } from "@checkout/sdk/contracts";
 import { bearerToken } from "../http/auth";
 import {
@@ -62,7 +62,7 @@ async function authenticate(
 export function createDevRoutes(dependencies: AppDependencies) {
   const sessionParams = zValidator("param", SessionParamsSchema, invalid);
 
-  return new Hono<AppEnv>()
+  return new Hono()
     .get(
       "/dev/checkout-sessions/:sessionId/activity",
       sessionParams,

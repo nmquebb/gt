@@ -6,7 +6,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { getWebDeviceId } from "@/lib/device-id";
 
-const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:3000";
+const apiUrl = "http://127.0.0.1:3000";
 
 function errorMessage(error: unknown) {
   return error instanceof CheckoutClientError

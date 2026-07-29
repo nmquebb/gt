@@ -2,7 +2,7 @@ import { zValidator } from "@hono/zod-validator";
 import { Hono, type Context } from "hono";
 import { upgradeWebSocket } from "hono/bun";
 import { z } from "zod";
-import type { AppDependencies, AppEnv } from "../app";
+import type { AppDependencies } from "../app";
 import {
   invalidRequest,
   respondWithError,
@@ -19,7 +19,7 @@ function invalid(result: { success: boolean }, context: Context) {
 }
 
 export function createRealtimeRoutes(dependencies: AppDependencies) {
-  return new Hono<AppEnv>().get(
+  return new Hono().get(
     "/checkout-sessions/:sessionId/events",
     zValidator("param", SessionParamsSchema, invalid),
     zValidator("query", EventsQuerySchema, invalid),
