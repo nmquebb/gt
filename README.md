@@ -5,6 +5,12 @@ checkout on the web and continuing the same session in an Expo iOS app. The API
 owns the checkout snapshot, while both clients render its status, allowed
 actions, price, hold, and order.
 
+## Architecture
+
+API validates requests and owns the in-memory checkout. SDK validates responses
+and applies HTTP/WebSocket snapshots to one revision-aware TanStack Query entry.
+Web and mobile render that shared state model.
+
 The web checkout exposes an authenticated **Open in app** handoff to the local
 iOS simulator. Web and mobile then receive complete checkout updates over
 realtime connections and can continue the same repricing, payment, and
@@ -25,6 +31,12 @@ bun run dev:api
 bun run dev:web
 bun run dev:mobile
 ```
+
+The API always runs on `http://127.0.0.1:3000` and the web app on
+`http://127.0.0.1:8000`. REST routes use permissive CORS for this local
+prototype. On the first `bun run dev:mobile` (or `expo run:ios`), Expo generates
+the iOS native project before launching the simulator; that generated `ios/`
+directory is intentionally untracked.
 
 ## Walkthrough
 

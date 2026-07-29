@@ -1,5 +1,9 @@
 # Checkout Continuity Implementation Plan
 
+> **Historical record:** This document describes the original implementation.
+> The current simplification design is
+> `docs/superpowers/specs/2026-07-29-prototype-simplification-design.md`.
+
 **Status:** Implemented
 
 **Date:** 2026-07-29
