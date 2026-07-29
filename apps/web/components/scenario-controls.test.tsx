@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, expect, test } from "bun:test";
+import { expect, test } from "bun:test";
 import {
   CheckoutProvider,
   createCheckoutClient,
@@ -7,24 +7,20 @@ import {
   type CheckoutSnapshot,
 } from "@checkout/sdk";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, type ReactTestRenderer } from "react-test-renderer";
 import {
   CheckoutScreenProvider,
   type CheckoutScreenRuntime,
 } from "@/lib/checkout-screen-context";
 import {
-  createTestRenderer,
-  installTestRendererWarningFilter,
-  restoreTestRendererWarningFilter,
-} from "@/test-utils/react-test-renderer";
+  createReactTestHarness,
+} from "@checkout/sdk/test-utils/react-test-renderer";
 import { ScenarioControls } from "./scenario-controls";
 
 (
   globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
 ).IS_REACT_ACT_ENVIRONMENT = true;
 
-beforeAll(installTestRendererWarningFilter);
-afterAll(restoreTestRendererWarningFilter);
+const { render } = createReactTestHarness();
 
 const snapshot = {
   serverNow: "2026-07-28T17:00:00.000Z",
@@ -85,23 +81,19 @@ test("renders generic payment outcomes without a reset action", async () => {
   } satisfies CheckoutScreenRuntime;
   const queryClient = new QueryClient();
 
-  let renderer!: ReactTestRenderer;
-  await act(async () => {
-    renderer = createTestRenderer(
-      <QueryClientProvider client={queryClient}>
-        <CheckoutProvider store={store}>
-          <CheckoutScreenProvider value={runtime}>
-            <ScenarioControls />
-          </CheckoutScreenProvider>
-        </CheckoutProvider>
-      </QueryClientProvider>,
-    );
-  });
+  const renderer = await render(
+    <QueryClientProvider client={queryClient}>
+      <CheckoutProvider store={store}>
+        <CheckoutScreenProvider value={runtime}>
+          <ScenarioControls />
+        </CheckoutScreenProvider>
+      </CheckoutProvider>
+    </QueryClientProvider>,
+  );
   const markup = JSON.stringify(renderer.toJSON());
 
   expect(markup).toContain("Next payment succeeds");
   expect(markup).toContain("Next payment fails");
   expect(markup).not.toContain("Reset checkout");
-  await act(async () => renderer.unmount());
   queryClient.clear();
 });

@@ -5,7 +5,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./checkout-client": "./src/clients/checkout.client.ts",
-    "./contracts": "./src/contracts/index.ts"
+    "./contracts": "./src/contracts/index.ts",
+    "./test-utils/react-test-renderer": "./test-utils/react-test-renderer.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

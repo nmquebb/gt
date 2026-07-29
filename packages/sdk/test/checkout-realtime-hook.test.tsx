@@ -1,7 +1,7 @@
-import { afterAll, afterEach, beforeAll, expect, test } from "bun:test";
+import { expect, test } from "bun:test";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useMemo } from "react";
-import { act, create, type ReactTestRenderer } from "react-test-renderer";
+import { act, type ReactTestRenderer } from "react-test-renderer";
 import type {
   CheckoutClientContext,
   RealtimeSocket,
@@ -13,37 +13,13 @@ import { useCheckoutRealtime } from "../src/react/use-checkout-realtime";
 import type { RealtimeEnvironment } from "../src/realtime/checkout-subscription";
 import { createCheckoutStore } from "../src/stores/checkout/checkout.store";
 import { checkoutSnapshotFixture, clockAnchorFixture } from "./fixtures";
+import { createReactTestHarness } from "../test-utils/react-test-renderer";
 
 (
   globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
 ).IS_REACT_ACT_ENVIRONMENT = true;
 
-const originalConsoleError = console.error;
-const renderers: ReactTestRenderer[] = [];
-
-beforeAll(() => {
-  console.error = (message?: unknown, ...arguments_: unknown[]) => {
-    if (
-      message ===
-      "react-test-renderer is deprecated. See https://react.dev/warnings/react-test-renderer"
-    ) {
-      return;
-    }
-    originalConsoleError(message, ...arguments_);
-  };
-});
-
-afterEach(async () => {
-  await act(async () => {
-    for (const renderer of renderers.splice(0)) {
-      renderer.unmount();
-    }
-  });
-});
-
-afterAll(() => {
-  console.error = originalConsoleError;
-});
+const { render } = createReactTestHarness();
 
 class FakeEnvironment implements RealtimeEnvironment {
   private nextTimerId = 1;
@@ -185,21 +161,17 @@ test("stops reconnecting for terminal snapshots", async () => {
       queries: { retry: false },
     },
   });
-  let renderer!: ReactTestRenderer;
-  await act(async () => {
-    renderer = create(
-      <QueryClientProvider client={queryClient}>
-        <CheckoutProvider store={store}>
-          <RealtimeStatus
-            context={context}
-            environment={environment}
-            socket={socket}
-          />
-        </CheckoutProvider>
-      </QueryClientProvider>,
-    );
-  });
-  renderers.push(renderer);
+  const renderer = await render(
+    <QueryClientProvider client={queryClient}>
+      <CheckoutProvider store={store}>
+        <RealtimeStatus
+          context={context}
+          environment={environment}
+          socket={socket}
+        />
+      </CheckoutProvider>
+    </QueryClientProvider>,
+  );
   await act(async () => {
     socket.emit("open");
     socket.emit("message", realtimeEvent(terminal));
@@ -230,17 +202,13 @@ test("uses the default timer environment when a socket disconnects", async () =>
       queries: { retry: false },
     },
   });
-  let renderer!: ReactTestRenderer;
-  await act(async () => {
-    renderer = create(
-      <QueryClientProvider client={queryClient}>
-        <CheckoutProvider store={store}>
-          <DefaultEnvironmentRealtimeStatus context={context} socket={socket} />
-        </CheckoutProvider>
-      </QueryClientProvider>,
-    );
-  });
-  renderers.push(renderer);
+  const renderer = await render(
+    <QueryClientProvider client={queryClient}>
+      <CheckoutProvider store={store}>
+        <DefaultEnvironmentRealtimeStatus context={context} socket={socket} />
+      </CheckoutProvider>
+    </QueryClientProvider>,
+  );
 
   await act(async () => {
     socket.emit("close");

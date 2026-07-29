@@ -1,17 +1,16 @@
-import { afterAll, afterEach, beforeAll, expect, test } from "bun:test";
+import { afterEach, expect, test } from "bun:test";
 import {
   CheckoutProvider,
   createCheckoutStore,
   type CheckoutSnapshot,
   type ClockAnchor,
 } from "@checkout/sdk";
-import { act, type ReactTestRenderer } from "react-test-renderer";
+import { act } from "react-test-renderer";
 import { HoldCountdown } from "./hold-countdown";
 import {
-  createTestRenderer,
-  installTestRendererWarningFilter,
-  restoreTestRendererWarningFilter,
-} from "@/test-utils/react-test-renderer";
+  createReactTestHarness,
+  textContent,
+} from "@checkout/sdk/test-utils/react-test-renderer";
 
 (
   globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
@@ -120,45 +119,37 @@ function anchorWithRemaining(remainingMs: number): ClockAnchor {
   };
 }
 
-function textContent(renderer: ReactTestRenderer) {
-  return JSON.stringify(renderer.toJSON());
-}
+const { render } = createReactTestHarness();
 
 async function renderCountdown(clockAnchor: ClockAnchor) {
   const store = createCheckoutStore({ snapshot, clockAnchor });
-  let renderer!: ReactTestRenderer;
-
-  await act(async () => {
-    renderer = createTestRenderer(
-      <CheckoutProvider store={store}>
-        <HoldCountdown />
-      </CheckoutProvider>,
-    );
-  });
-
-  return renderer;
+  return render(
+    <CheckoutProvider store={store}>
+      <HoldCountdown />
+    </CheckoutProvider>,
+  );
 }
-
-beforeAll(installTestRendererWarningFilter);
 
 afterEach(() => {
   restoreWindow(originalWindow);
   restorePerformanceNow();
 });
 
-afterAll(restoreTestRendererWarningFilter);
-
 test("counts down from the hydrated monotonic clock anchor", async () => {
   const now = { value: 1_000 };
   const timerWindow = installClock(now);
   const renderer = await renderCountdown(anchorWithRemaining(65_000));
 
-  expect(textContent(renderer)).toContain("Hold expires in 1:05");
+  expect(textContent(renderer.root.findByType("p"))).toContain(
+    "Hold expires in 1:05",
+  );
 
   now.value = 2_500;
   await act(async () => timerWindow.tick());
 
-  expect(textContent(renderer)).toContain("Hold expires in 1:04");
+  expect(textContent(renderer.root.findByType("p"))).toContain(
+    "Hold expires in 1:04",
+  );
 
   await act(async () => renderer.unmount());
   expect(timerWindow.intervals.size).toBe(0);
@@ -169,7 +160,9 @@ test("renders zero without attempting hold recovery", async () => {
   installClock(now);
   const renderer = await renderCountdown(anchorWithRemaining(500));
 
-  expect(textContent(renderer)).toContain("Hold expires now");
+  expect(textContent(renderer.root.findByType("p"))).toContain(
+    "Hold expires now",
+  );
 
   await act(async () => renderer.unmount());
 });

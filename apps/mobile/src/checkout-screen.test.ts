@@ -1,7 +1,5 @@
 import {
-  afterAll,
   afterEach,
-  beforeAll,
   beforeEach,
   expect,
   mock,
@@ -9,7 +7,7 @@ import {
 } from "bun:test";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import React from "react";
-import { act, create, type ReactTestInstance } from "react-test-renderer";
+import { act, type ReactTestInstance } from "react-test-renderer";
 import type {
   CheckoutClient,
   CheckoutClientContext,
@@ -19,6 +17,10 @@ import type {
   RealtimeSocket,
   RealtimeSocketEvent,
 } from "@checkout/sdk";
+import {
+  createReactTestHarness,
+  textContent,
+} from "@checkout/sdk/test-utils/react-test-renderer";
 
 type NavigationListener = () => void;
 type CheckoutScreenClient = Pick<
@@ -28,25 +30,6 @@ type CheckoutScreenClient = Pick<
 
 let beforeRemoveListener: NavigationListener | undefined;
 let leaveCalls: CheckoutClientContext[] = [];
-
-function textContent(value: unknown): string {
-  if (typeof value === "string" || typeof value === "number") {
-    return String(value);
-  }
-  if (Array.isArray(value)) {
-    return value.map(textContent).join("");
-  }
-  if (typeof value === "object" && value !== null && "children" in value) {
-    return textContent((value as { children?: unknown }).children);
-  }
-  if (typeof value === "object" && value !== null && "props" in value) {
-    return textContent(
-      (value as { props?: { children?: unknown } }).props?.children,
-    );
-  }
-
-  return "";
-}
 
 void mock.module("react-native", () => ({
   AppState: {
@@ -87,23 +70,7 @@ const { CheckoutScreen } = await import("./checkout-screen");
   globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
 ).IS_REACT_ACT_ENVIRONMENT = true;
 
-const originalConsoleError = console.error;
-
-beforeAll(() => {
-  console.error = (message?: unknown, ...arguments_: unknown[]) => {
-    if (
-      message ===
-      "react-test-renderer is deprecated. See https://react.dev/warnings/react-test-renderer"
-    ) {
-      return;
-    }
-    originalConsoleError(message, ...arguments_);
-  };
-});
-
-afterAll(() => {
-  console.error = originalConsoleError;
-});
+const { render } = createReactTestHarness();
 
 beforeEach(() => {
   beforeRemoveListener = undefined;
@@ -228,7 +195,7 @@ function findText(
   )[0];
 }
 
-function renderCheckoutScreen({
+async function renderCheckoutScreen({
   client,
   context: checkoutContext,
   initialResult: resumed,
@@ -240,21 +207,17 @@ function renderCheckoutScreen({
   const queryClient = new QueryClient({
     defaultOptions: { mutations: { retry: false }, queries: { retry: false } },
   });
-  let renderer: ReturnType<typeof create>;
-
-  act(() => {
-    renderer = create(
-      React.createElement(
-        QueryClientProvider,
-        { client: queryClient },
-        React.createElement(CheckoutScreen, {
-          client,
-          context: checkoutContext,
-          initialResult: resumed,
-        }),
-      ),
-    );
-  });
+  const renderer = await render(
+    React.createElement(
+      QueryClientProvider,
+      { client: queryClient },
+      React.createElement(CheckoutScreen, {
+        client,
+        context: checkoutContext,
+        initialResult: resumed,
+      }),
+    ),
+  );
 
   return {
     flush: async () => {
@@ -311,7 +274,11 @@ function createClient(socket: TestSocket): CheckoutScreenClient {
 test("renders resumed checkout and applies a realtime completion", async () => {
   const socket = new TestSocket();
   const client = createClient(socket);
-  const rendered = renderCheckoutScreen({ client, context, initialResult });
+  const rendered = await renderCheckoutScreen({
+    client,
+    context,
+    initialResult,
+  });
   expect(rendered.getByText("Your seat is held")).toBeDefined();
 
   await act(async () => {
@@ -327,7 +294,11 @@ test("renders resumed checkout and applies a realtime completion", async () => {
 test("notifies active checkout leave without blocking native navigation", async () => {
   const socket = new TestSocket();
   const client = createClient(socket);
-  const rendered = renderCheckoutScreen({ client, context, initialResult });
+  const rendered = await renderCheckoutScreen({
+    client,
+    context,
+    initialResult,
+  });
 
   expect(beforeRemoveListener).toBeDefined();
   beforeRemoveListener?.();
@@ -340,7 +311,7 @@ test("notifies active checkout leave without blocking native navigation", async 
 test("renders the purchase action authorized by allowedActions", async () => {
   const socket = new TestSocket();
   const client = createClient(socket);
-  const rendered = renderCheckoutScreen({
+  const rendered = await renderCheckoutScreen({
     client,
     context,
     initialResult: {
@@ -366,7 +337,7 @@ test("disables purchase when the monotonic hold has expired", async () => {
   const expiresAtEpochMs = Date.parse(
     activeSnapshot.session.inventoryHold.expiresAt,
   );
-  const rendered = renderCheckoutScreen({
+  const rendered = await renderCheckoutScreen({
     client,
     context,
     initialResult: {

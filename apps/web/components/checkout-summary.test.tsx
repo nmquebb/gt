@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, expect, test } from "bun:test";
+import { expect, test } from "bun:test";
 import {
   CheckoutProvider,
   createCheckoutClient,
@@ -7,24 +7,20 @@ import {
   type CheckoutSnapshot,
 } from "@checkout/sdk";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, type ReactTestRenderer } from "react-test-renderer";
 import { CheckoutSummary } from "./checkout-summary";
 import {
   CheckoutScreenProvider,
   type CheckoutScreenRuntime,
 } from "@/lib/checkout-screen-context";
 import {
-  createTestRenderer,
-  installTestRendererWarningFilter,
-  restoreTestRendererWarningFilter,
-} from "@/test-utils/react-test-renderer";
+  createReactTestHarness,
+} from "@checkout/sdk/test-utils/react-test-renderer";
 
 (
   globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
 ).IS_REACT_ACT_ENVIRONMENT = true;
 
-beforeAll(installTestRendererWarningFilter);
-afterAll(restoreTestRendererWarningFilter);
+const { render } = createReactTestHarness();
 
 const context: CheckoutClientContext = {
   deviceId: "web_1",
@@ -38,24 +34,17 @@ async function renderSummary(
   runtime: CheckoutScreenRuntime,
 ) {
   const queryClient = new QueryClient();
-  let renderer!: ReactTestRenderer;
-
-  await act(async () => {
-    renderer = createTestRenderer(
-      <QueryClientProvider client={queryClient}>
-        <CheckoutProvider store={store}>
-          <CheckoutScreenProvider value={runtime}>
-            <CheckoutSummary />
-          </CheckoutScreenProvider>
-        </CheckoutProvider>
-      </QueryClientProvider>,
-    );
-  });
+  const renderer = await render(
+    <QueryClientProvider client={queryClient}>
+      <CheckoutProvider store={store}>
+        <CheckoutScreenProvider value={runtime}>
+          <CheckoutSummary />
+        </CheckoutScreenProvider>
+      </CheckoutProvider>
+    </QueryClientProvider>,
+  );
   const output = JSON.stringify(renderer.toJSON());
 
-  await act(async () => {
-    renderer.unmount();
-  });
   queryClient.clear();
 
   return output;

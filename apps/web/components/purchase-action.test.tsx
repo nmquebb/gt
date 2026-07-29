@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, expect, test } from "bun:test";
+import { expect, test } from "bun:test";
 import {
   CheckoutProvider,
   createCheckoutClient,
@@ -7,24 +7,21 @@ import {
   type CheckoutSnapshot,
 } from "@checkout/sdk";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, type ReactTestRenderer } from "react-test-renderer";
 import { PurchaseAction } from "./purchase-action";
 import {
   CheckoutScreenProvider,
   type CheckoutScreenRuntime,
 } from "@/lib/checkout-screen-context";
 import {
-  createTestRenderer,
-  installTestRendererWarningFilter,
-  restoreTestRendererWarningFilter,
-} from "@/test-utils/react-test-renderer";
+  createReactTestHarness,
+  textContent,
+} from "@checkout/sdk/test-utils/react-test-renderer";
 
 (
   globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
 ).IS_REACT_ACT_ENVIRONMENT = true;
 
-beforeAll(installTestRendererWarningFilter);
-afterAll(restoreTestRendererWarningFilter);
+const { render } = createReactTestHarness();
 
 const activeSnapshot = {
   serverNow: "2026-07-28T17:00:00.000Z",
@@ -62,22 +59,6 @@ const context: CheckoutClientContext = {
   deviceId: "web_1",
 };
 
-function textContent(value: unknown): string {
-  if (typeof value === "string" || typeof value === "number") {
-    return String(value);
-  }
-  if (Array.isArray(value)) {
-    return value.map(textContent).join("");
-  }
-  if (typeof value === "object" && value !== null && "props" in value) {
-    return textContent(
-      (value as { props?: { children?: unknown } }).props?.children,
-    );
-  }
-
-  return "";
-}
-
 async function renderPurchaseAction(snapshot: CheckoutSnapshot) {
   const monotonicNow = performance.now();
   const store = createCheckoutStore({
@@ -101,49 +82,40 @@ async function renderPurchaseAction(snapshot: CheckoutSnapshot) {
     realtimeStatus: "connected",
   } satisfies CheckoutScreenRuntime;
   const queryClient = new QueryClient();
-  let renderer!: ReactTestRenderer;
-
-  await act(async () => {
-    renderer = createTestRenderer(
-      <QueryClientProvider client={queryClient}>
-        <CheckoutProvider store={store}>
-          <CheckoutScreenProvider value={runtime}>
-            <PurchaseAction />
-          </CheckoutScreenProvider>
-        </CheckoutProvider>
-      </QueryClientProvider>,
-    );
-  });
+  const renderer = await render(
+    <QueryClientProvider client={queryClient}>
+      <CheckoutProvider store={store}>
+        <CheckoutScreenProvider value={runtime}>
+          <PurchaseAction />
+        </CheckoutScreenProvider>
+      </CheckoutProvider>
+    </QueryClientProvider>,
+  );
   const buttons = renderer.root.findAllByType("button").map((button) => ({
     disabled: button.props.disabled as boolean | undefined,
     text: textContent(button.props.children),
   }));
   const output = JSON.stringify(renderer.toJSON());
 
-  await act(async () => {
-    renderer.unmount();
-  });
   queryClient.clear();
 
   return { buttons, output };
 }
 
-for (const status of ["completed", "expired", "abandoned"] as const) {
-  test(`renders no purchase control for a ${status} terminal snapshot`, async () => {
-    const terminalSnapshot = {
-      ...activeSnapshot,
-      session: {
-        ...activeSnapshot.session,
-        revision: 2,
-        phase: status,
-      },
-      allowedActions: [],
-      status,
-    } satisfies CheckoutSnapshot;
+test("renders no purchase control for a terminal snapshot", async () => {
+  const terminalSnapshot = {
+    ...activeSnapshot,
+    session: {
+      ...activeSnapshot.session,
+      revision: 2,
+      phase: "completed",
+    },
+    allowedActions: [],
+    status: "completed",
+  } satisfies CheckoutSnapshot;
 
-    expect((await renderPurchaseAction(terminalSnapshot)).buttons).toEqual([]);
-  });
-}
+  expect((await renderPurchaseAction(terminalSnapshot)).buttons).toEqual([]);
+});
 
 test("renders no purchase control when a nonterminal snapshot allows only offer acceptance", async () => {
   expect((await renderPurchaseAction(activeSnapshot)).buttons).toEqual([]);

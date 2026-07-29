@@ -1,14 +1,7 @@
-import {
-  afterAll,
-  afterEach,
-  beforeAll,
-  describe,
-  expect,
-  test,
-} from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactElement } from "react";
-import { act, create, type ReactTestRenderer } from "react-test-renderer";
+import { act } from "react-test-renderer";
 import type {
   CheckoutClient,
   CheckoutClientContext,
@@ -21,40 +14,20 @@ import {
 } from "../src/react/use-checkout-commands";
 import { createCheckoutStore } from "../src/stores/checkout/checkout.store";
 import { checkoutSnapshotFixture, clockAnchorFixture } from "./fixtures";
+import { createReactTestHarness } from "../test-utils/react-test-renderer";
 
 (
   globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
 ).IS_REACT_ACT_ENVIRONMENT = true;
 
-const originalConsoleError = console.error;
-const renderers: ReactTestRenderer[] = [];
 const queryClients: QueryClient[] = [];
 
-beforeAll(() => {
-  console.error = (message?: unknown, ...arguments_: unknown[]) => {
-    if (
-      message ===
-      "react-test-renderer is deprecated. See https://react.dev/warnings/react-test-renderer"
-    ) {
-      return;
-    }
-    originalConsoleError(message, ...arguments_);
-  };
-});
+const { render } = createReactTestHarness();
 
 afterEach(async () => {
-  await act(async () => {
-    for (const renderer of renderers.splice(0)) {
-      renderer.unmount();
-    }
-  });
   for (const queryClient of queryClients.splice(0)) {
     queryClient.clear();
   }
-});
-
-afterAll(() => {
-  console.error = originalConsoleError;
 });
 
 const context: CheckoutClientContext = {
@@ -74,16 +47,6 @@ function createQueryClient(): QueryClient {
   queryClients.push(queryClient);
 
   return queryClient;
-}
-
-async function render(element: ReactElement): Promise<ReactTestRenderer> {
-  let renderer!: ReactTestRenderer;
-  await act(async () => {
-    renderer = create(element);
-  });
-  renderers.push(renderer);
-
-  return renderer;
 }
 
 function seedRelatedQueries(queryClient: QueryClient): void {

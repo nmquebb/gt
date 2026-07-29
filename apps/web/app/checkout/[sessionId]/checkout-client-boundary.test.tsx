@@ -9,18 +9,17 @@ import {
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   act,
-  type ReactTestInstance,
-  type ReactTestRenderer,
 } from "react-test-renderer";
 import {
-  createTestRenderer,
-  installTestRendererWarningFilter,
-  restoreTestRendererWarningFilter,
-} from "@/test-utils/react-test-renderer";
+  createReactTestHarness,
+  textContent,
+} from "@checkout/sdk/test-utils/react-test-renderer";
 
 (
   globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
 ).IS_REACT_ACT_ENVIRONMENT = true;
+
+const { render } = createReactTestHarness();
 
 await mock.module("next/navigation", () => ({
   usePathname: () => "/checkout/chk_1",
@@ -158,32 +157,22 @@ function controlledClient({
   });
 }
 
-function textContent(node: ReactTestInstance | string): string {
-  if (typeof node === "string") {
-    return node;
-  }
-
-  return node.children.map((child) => textContent(child)).join("");
-}
-
 async function renderBoundary({ client }: { client: CheckoutClient }) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
-  let renderer!: ReactTestRenderer;
-
+  const renderer = await render(
+    <QueryClientProvider client={queryClient}>
+      <CheckoutClientBoundary
+        apiUrl="https://checkout.test"
+        client={client}
+        clockHandoff={clockHandoff}
+        sessionId={snapshot.session.id}
+        snapshot={snapshot}
+      />
+    </QueryClientProvider>,
+  );
   await act(async () => {
-    renderer = createTestRenderer(
-      <QueryClientProvider client={queryClient}>
-        <CheckoutClientBoundary
-          apiUrl="https://checkout.test"
-          client={client}
-          clockHandoff={clockHandoff}
-          sessionId={snapshot.session.id}
-          snapshot={snapshot}
-        />
-      </QueryClientProvider>,
-    );
     await Promise.resolve();
   });
 
@@ -225,7 +214,6 @@ async function renderBoundary({ client }: { client: CheckoutClient }) {
 }
 
 beforeAll(() => {
-  installTestRendererWarningFilter();
   installBrowser();
 });
 
@@ -234,7 +222,6 @@ afterEach(() => {
 });
 
 afterAll(() => {
-  restoreTestRendererWarningFilter();
   restoreGlobal("window", originalWindow);
   restoreGlobal("document", originalDocument);
   restoreGlobal("localStorage", originalLocalStorage);
