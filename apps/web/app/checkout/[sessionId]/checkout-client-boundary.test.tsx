@@ -7,9 +7,7 @@ import {
   type ClockHandoff,
 } from "@checkout/sdk";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import {
-  act,
-} from "react-test-renderer";
+import { act, type ReactTestInstance } from "react-test-renderer";
 import {
   createReactTestHarness,
   textContent,
@@ -157,11 +155,11 @@ function controlledClient({
   });
 }
 
-async function renderBoundary({ client }: { client: CheckoutClient }) {
+function checkoutBoundaryElement(client: CheckoutClient) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
-  const renderer = await render(
+  return (
     <QueryClientProvider client={queryClient}>
       <CheckoutClientBoundary
         apiUrl="https://checkout.test"
@@ -170,47 +168,45 @@ async function renderBoundary({ client }: { client: CheckoutClient }) {
         sessionId={snapshot.session.id}
         snapshot={snapshot}
       />
-    </QueryClientProvider>,
+    </QueryClientProvider>
   );
+}
+
+async function flush(): Promise<void> {
   await act(async () => {
     await Promise.resolve();
   });
+  await act(async () => {
+    await Promise.resolve();
+    await Promise.resolve();
+    await new Promise<void>((resolve) => {
+      globalThis.setTimeout(resolve, 0);
+    });
+  });
+}
 
-  return {
-    flush: async () => {
-      await act(async () => {
-        await Promise.resolve();
-        await Promise.resolve();
-        await new Promise<void>((resolve) => {
-          globalThis.setTimeout(resolve, 0);
-        });
-      });
-    },
-    getByRole: (role: string, { name }: { name: string }) => {
-      const match = renderer.root
-        .findAll((node) => node.type === role)
-        .find((node) => textContent(node).includes(name));
-      if (match === undefined) {
-        throw new Error(`Unable to find ${role} named ${name}`);
-      }
+function getByRole(
+  root: ReactTestInstance,
+  role: string,
+  { name }: { name: string },
+) {
+  const match = root
+    .findAll((node) => node.type === role)
+    .find((node) => textContent(node).includes(name));
+  if (match === undefined) {
+    throw new Error(`Unable to find ${role} named ${name}`);
+  }
 
-      return match;
-    },
-    getByText: (text: string) => {
-      const match = renderer.root.findAll(
-        (node) => textContent(node) === text,
-      )[0];
-      if (match === undefined) {
-        throw new Error(`Unable to find text ${text}`);
-      }
+  return match;
+}
 
-      return match;
-    },
-    unmount: async () => {
-      await act(async () => renderer.unmount());
-      queryClient.clear();
-    },
-  };
+function getByText(root: ReactTestInstance, text: string) {
+  const match = root.findAll((node) => textContent(node) === text)[0];
+  if (match === undefined) {
+    throw new Error(`Unable to find text ${text}`);
+  }
+
+  return match;
 }
 
 beforeAll(() => {
@@ -232,12 +228,12 @@ test("resumes the SSR checkout and starts realtime", async () => {
   const client = controlledClient({
     resume: () => resume.promise,
   });
-  const rendered = await renderBoundary({ client });
+  const renderer = await render(checkoutBoundaryElement(client));
 
   expect(client.openEvents).not.toHaveBeenCalled();
 
   resume.resolve(commandResult);
-  await rendered.flush();
+  await flush();
 
   expect(client.resume).toHaveBeenCalledWith({
     sessionId: snapshot.session.id,
@@ -246,9 +242,7 @@ test("resumes the SSR checkout and starts realtime", async () => {
     deviceId: expect.any(String),
   });
   expect(client.openEvents).toHaveBeenCalledTimes(1);
-  expect(rendered.getByText("Your seat is held")).toBeDefined();
-
-  await rendered.unmount();
+  expect(getByText(renderer.root, "Your seat is held")).toBeDefined();
 });
 
 test("renders the SSR snapshot while browser resume is pending", async () => {
@@ -256,36 +250,35 @@ test("renders the SSR snapshot while browser resume is pending", async () => {
   const client = controlledClient({
     resume: () => resume.promise,
   });
-  const rendered = await renderBoundary({ client });
+  const renderer = await render(checkoutBoundaryElement(client));
 
   expect(
-    rendered.getByText("Chicago Bears vs. Green Bay Packers"),
+    getByText(renderer.root, "Chicago Bears vs. Green Bay Packers"),
   ).toBeDefined();
   expect(client.openEvents).not.toHaveBeenCalled();
 
-  await rendered.unmount();
   resume.resolve(commandResult);
+  await flush();
 });
 
 test("disables explicit leave while a purchase command is pending", async () => {
   const client = controlledClient({
     resume: async () => commandResult,
   });
-  const rendered = await renderBoundary({ client });
-  await rendered.flush();
+  const renderer = await render(checkoutBoundaryElement(client));
+  await flush();
 
-  const purchase = rendered.getByRole("button", { name: "Purchase" });
+  const purchase = getByRole(renderer.root, "button", { name: "Purchase" });
   await act(async () => {
     purchase.props.onClick();
     await Promise.resolve();
   });
-  await rendered.flush();
+  await flush();
 
   expect(
-    rendered.getByRole("button", { name: "Back to listings" }).props.disabled,
+    getByRole(renderer.root, "button", { name: "Back to listings" }).props
+      .disabled,
   ).toBe(true);
-
-  await rendered.unmount();
 });
 
 test("shows a retry action when resume fails", async () => {
@@ -294,13 +287,11 @@ test("shows a retry action when resume fails", async () => {
       throw new CheckoutClientError("NETWORK_UNAVAILABLE", "offline");
     },
   });
-  const rendered = await renderBoundary({ client });
+  const renderer = await render(checkoutBoundaryElement(client));
 
-  await rendered.flush();
+  await flush();
 
   expect(
-    rendered.getByRole("button", { name: "Retry connection" }),
+    getByRole(renderer.root, "button", { name: "Retry connection" }),
   ).toBeDefined();
-
-  await rendered.unmount();
 });

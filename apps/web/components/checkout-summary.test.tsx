@@ -12,9 +12,7 @@ import {
   CheckoutScreenProvider,
   type CheckoutScreenRuntime,
 } from "@/lib/checkout-screen-context";
-import {
-  createReactTestHarness,
-} from "@checkout/sdk/test-utils/react-test-renderer";
+import { createReactTestHarness } from "@checkout/sdk/test-utils/react-test-renderer";
 
 (
   globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
@@ -29,25 +27,20 @@ const context: CheckoutClientContext = {
   surface: "web",
 };
 
-async function renderSummary(
+function checkoutSummaryElement(
   store: ReturnType<typeof createCheckoutStore>,
   runtime: CheckoutScreenRuntime,
 ) {
   const queryClient = new QueryClient();
-  const renderer = await render(
+  return (
     <QueryClientProvider client={queryClient}>
       <CheckoutProvider store={store}>
         <CheckoutScreenProvider value={runtime}>
           <CheckoutSummary />
         </CheckoutScreenProvider>
       </CheckoutProvider>
-    </QueryClientProvider>,
+    </QueryClientProvider>
   );
-  const output = JSON.stringify(renderer.toJSON());
-
-  queryClient.clear();
-
-  return output;
 }
 
 test("does not offer price acceptance when a terminal snapshot has no allowed actions", async () => {
@@ -109,7 +102,8 @@ test("does not offer price acceptance when a terminal snapshot has no allowed ac
     realtimeStatus: "stopped",
   } satisfies CheckoutScreenRuntime;
 
-  const html = await renderSummary(store, runtime);
+  const renderer = await render(checkoutSummaryElement(store, runtime));
+  const html = JSON.stringify(renderer.toJSON());
 
   expect(html).not.toContain("Accept new price");
 });
@@ -168,7 +162,8 @@ test("offers price acceptance when the server allows accept_offer", async () => 
     realtimeStatus: "connected",
   } satisfies CheckoutScreenRuntime;
 
-  const html = await renderSummary(store, runtime);
+  const renderer = await render(checkoutSummaryElement(store, runtime));
+  const html = JSON.stringify(renderer.toJSON());
 
   expect(html).toContain("Accept new price");
 });

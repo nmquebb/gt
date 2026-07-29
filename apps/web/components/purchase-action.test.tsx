@@ -16,6 +16,7 @@ import {
   createReactTestHarness,
   textContent,
 } from "@checkout/sdk/test-utils/react-test-renderer";
+import type { ReactTestRenderer } from "react-test-renderer";
 
 (
   globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
@@ -59,7 +60,7 @@ const context: CheckoutClientContext = {
   deviceId: "web_1",
 };
 
-async function renderPurchaseAction(snapshot: CheckoutSnapshot) {
+function purchaseActionElement(snapshot: CheckoutSnapshot) {
   const monotonicNow = performance.now();
   const store = createCheckoutStore({
     snapshot,
@@ -82,22 +83,23 @@ async function renderPurchaseAction(snapshot: CheckoutSnapshot) {
     realtimeStatus: "connected",
   } satisfies CheckoutScreenRuntime;
   const queryClient = new QueryClient();
-  const renderer = await render(
+  return (
     <QueryClientProvider client={queryClient}>
       <CheckoutProvider store={store}>
         <CheckoutScreenProvider value={runtime}>
           <PurchaseAction />
         </CheckoutScreenProvider>
       </CheckoutProvider>
-    </QueryClientProvider>,
+    </QueryClientProvider>
   );
+}
+
+function purchaseActionView(renderer: ReactTestRenderer) {
   const buttons = renderer.root.findAllByType("button").map((button) => ({
     disabled: button.props.disabled as boolean | undefined,
     text: textContent(button.props.children),
   }));
   const output = JSON.stringify(renderer.toJSON());
-
-  queryClient.clear();
 
   return { buttons, output };
 }
@@ -114,19 +116,27 @@ test("renders no purchase control for a terminal snapshot", async () => {
     status: "completed",
   } satisfies CheckoutSnapshot;
 
-  expect((await renderPurchaseAction(terminalSnapshot)).buttons).toEqual([]);
+  const renderer = await render(purchaseActionElement(terminalSnapshot));
+
+  expect(purchaseActionView(renderer).buttons).toEqual([]);
 });
 
 test("renders no purchase control when a nonterminal snapshot allows only offer acceptance", async () => {
-  expect((await renderPurchaseAction(activeSnapshot)).buttons).toEqual([]);
+  const renderer = await render(purchaseActionElement(activeSnapshot));
+
+  expect(purchaseActionView(renderer).buttons).toEqual([]);
 });
 
 test("labels the purchase control from the authoritative purchase action", async () => {
-  const { buttons } = await renderPurchaseAction({
-    ...activeSnapshot,
-    allowedActions: ["purchase"],
-    status: "purchase_failed",
-  });
+  const { buttons } = purchaseActionView(
+    await render(
+      purchaseActionElement({
+        ...activeSnapshot,
+        allowedActions: ["purchase"],
+        status: "purchase_failed",
+      }),
+    ),
+  );
 
   expect(buttons).toHaveLength(1);
   expect(buttons[0]?.text).toContain("Purchase");
@@ -134,30 +144,38 @@ test("labels the purchase control from the authoritative purchase action", async
 });
 
 test("labels the retry control from the authoritative retry action", async () => {
-  const { buttons } = await renderPurchaseAction({
-    ...activeSnapshot,
-    session: {
-      ...activeSnapshot.session,
-      payment: { status: "failed" },
-    },
-    allowedActions: ["retry_purchase"],
-    status: "ready",
-  });
+  const { buttons } = purchaseActionView(
+    await render(
+      purchaseActionElement({
+        ...activeSnapshot,
+        session: {
+          ...activeSnapshot.session,
+          payment: { status: "failed" },
+        },
+        allowedActions: ["retry_purchase"],
+        status: "ready",
+      }),
+    ),
+  );
 
   expect(buttons).toHaveLength(1);
   expect(buttons[0]?.text).toContain("Retry purchase");
 });
 
 test("disables an authorized purchase after the monotonic hold reaches zero", async () => {
-  const { buttons } = await renderPurchaseAction({
-    ...activeSnapshot,
-    session: {
-      ...activeSnapshot.session,
-      inventoryHold: { expiresAt: "2026-07-28T16:59:00.000Z" },
-    },
-    allowedActions: ["purchase"],
-    status: "ready",
-  });
+  const { buttons } = purchaseActionView(
+    await render(
+      purchaseActionElement({
+        ...activeSnapshot,
+        session: {
+          ...activeSnapshot.session,
+          inventoryHold: { expiresAt: "2026-07-28T16:59:00.000Z" },
+        },
+        allowedActions: ["purchase"],
+        status: "ready",
+      }),
+    ),
+  );
 
   expect(buttons).toEqual([{ disabled: true, text: "Purchase" }]);
 });
@@ -168,11 +186,15 @@ test.each([
 ] as const)(
   "keeps the authorized %s control authoritative over a contradictory pending status",
   async (allowedAction, label) => {
-    const { buttons, output } = await renderPurchaseAction({
-      ...activeSnapshot,
-      allowedActions: [allowedAction],
-      status: "purchase_pending",
-    });
+    const { buttons, output } = purchaseActionView(
+      await render(
+        purchaseActionElement({
+          ...activeSnapshot,
+          allowedActions: [allowedAction],
+          status: "purchase_pending",
+        }),
+      ),
+    );
 
     expect(buttons).toEqual([{ disabled: false, text: label }]);
     expect(output).not.toContain("Completing purchase");
@@ -180,16 +202,20 @@ test.each([
 );
 
 test("renders purchase progress as status instead of an unauthorized control", async () => {
-  const { buttons, output } = await renderPurchaseAction({
-    ...activeSnapshot,
-    session: {
-      ...activeSnapshot.session,
-      phase: "purchasing",
-      payment: { status: "pending" },
-    },
-    allowedActions: [],
-    status: "purchase_pending",
-  });
+  const { buttons, output } = purchaseActionView(
+    await render(
+      purchaseActionElement({
+        ...activeSnapshot,
+        session: {
+          ...activeSnapshot.session,
+          phase: "purchasing",
+          payment: { status: "pending" },
+        },
+        allowedActions: [],
+        status: "purchase_pending",
+      }),
+    ),
+  );
 
   expect(buttons).toEqual([]);
   expect(output).toContain("Completing purchase");

@@ -1,10 +1,4 @@
-import {
-  afterEach,
-  beforeEach,
-  expect,
-  mock,
-  test,
-} from "bun:test";
+import { afterEach, beforeEach, expect, mock, test } from "bun:test";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import React from "react";
 import { act, type ReactTestInstance } from "react-test-renderer";
@@ -195,7 +189,7 @@ function findText(
   )[0];
 }
 
-async function renderCheckoutScreen({
+function checkoutScreenElement({
   client,
   context: checkoutContext,
   initialResult: resumed,
@@ -207,52 +201,44 @@ async function renderCheckoutScreen({
   const queryClient = new QueryClient({
     defaultOptions: { mutations: { retry: false }, queries: { retry: false } },
   });
-  const renderer = await render(
-    React.createElement(
-      QueryClientProvider,
-      { client: queryClient },
-      React.createElement(CheckoutScreen, {
-        client,
-        context: checkoutContext,
-        initialResult: resumed,
-      }),
-    ),
+  return React.createElement(
+    QueryClientProvider,
+    { client: queryClient },
+    React.createElement(CheckoutScreen, {
+      client,
+      context: checkoutContext,
+      initialResult: resumed,
+    }),
   );
+}
 
-  return {
-    flush: async () => {
-      await act(async () => {
-        await Promise.resolve();
-      });
-    },
-    getByText: (expected: string | RegExp) => {
-      const match = findText(renderer.root, expected);
-      if (match === undefined) {
-        throw new Error(`Could not find rendered text ${String(expected)}`);
-      }
+async function flush(): Promise<void> {
+  await act(async () => {
+    await Promise.resolve();
+  });
+}
 
-      return match;
-    },
-    getButtonByText: (expected: string) => {
-      const match = renderer.root.findAll(
-        (instance) =>
-          String(instance.type) === "Pressable" &&
-          textContent(instance.props.children) === expected,
-        { deep: true },
-      )[0];
-      if (match === undefined) {
-        throw new Error(`Could not find button text ${expected}`);
-      }
+function getByText(root: ReactTestInstance, expected: string | RegExp) {
+  const match = findText(root, expected);
+  if (match === undefined) {
+    throw new Error(`Could not find rendered text ${String(expected)}`);
+  }
 
-      return match;
-    },
-    unmount: async () => {
-      await act(async () => {
-        renderer.unmount();
-      });
-      queryClient.clear();
-    },
-  };
+  return match;
+}
+
+function getButtonByText(root: ReactTestInstance, expected: string) {
+  const match = root.findAll(
+    (instance) =>
+      String(instance.type) === "Pressable" &&
+      textContent(instance.props.children) === expected,
+    { deep: true },
+  )[0];
+  if (match === undefined) {
+    throw new Error(`Could not find button text ${expected}`);
+  }
+
+  return match;
 }
 
 function createClient(socket: TestSocket): CheckoutScreenClient {
@@ -274,61 +260,64 @@ function createClient(socket: TestSocket): CheckoutScreenClient {
 test("renders resumed checkout and applies a realtime completion", async () => {
   const socket = new TestSocket();
   const client = createClient(socket);
-  const rendered = await renderCheckoutScreen({
-    client,
-    context,
-    initialResult,
-  });
-  expect(rendered.getByText("Your seat is held")).toBeDefined();
+  const renderer = await render(
+    checkoutScreenElement({
+      client,
+      context,
+      initialResult,
+    }),
+  );
+  expect(getByText(renderer.root, "Your seat is held")).toBeDefined();
 
   await act(async () => {
     socket.message(completedEvent);
   });
-  await rendered.flush();
+  await flush();
 
-  expect(rendered.getByText("You’re going")).toBeDefined();
-  expect(rendered.getByText(/Order ord_/)).toBeDefined();
-  await rendered.unmount();
+  expect(getByText(renderer.root, "You’re going")).toBeDefined();
+  expect(getByText(renderer.root, /Order ord_/)).toBeDefined();
 });
 
 test("notifies active checkout leave without blocking native navigation", async () => {
   const socket = new TestSocket();
   const client = createClient(socket);
-  const rendered = await renderCheckoutScreen({
-    client,
-    context,
-    initialResult,
-  });
+  await render(
+    checkoutScreenElement({
+      client,
+      context,
+      initialResult,
+    }),
+  );
 
   expect(beforeRemoveListener).toBeDefined();
   beforeRemoveListener?.();
   expect(leaveCalls).toEqual([context]);
 
-  await rendered.flush();
-  await rendered.unmount();
+  await flush();
 });
 
 test("renders the purchase action authorized by allowedActions", async () => {
   const socket = new TestSocket();
   const client = createClient(socket);
-  const rendered = await renderCheckoutScreen({
-    client,
-    context,
-    initialResult: {
-      ...initialResult,
-      snapshot: {
-        ...activeSnapshot,
-        session: {
-          ...activeSnapshot.session,
-          payment: { status: "failed" },
+  const renderer = await render(
+    checkoutScreenElement({
+      client,
+      context,
+      initialResult: {
+        ...initialResult,
+        snapshot: {
+          ...activeSnapshot,
+          session: {
+            ...activeSnapshot.session,
+            payment: { status: "failed" },
+          },
+          status: "purchase_failed",
         },
-        status: "purchase_failed",
       },
-    },
-  });
+    }),
+  );
 
-  expect(rendered.getButtonByText("Purchase").props.disabled).toBe(false);
-  await rendered.unmount();
+  expect(getButtonByText(renderer.root, "Purchase").props.disabled).toBe(false);
 });
 
 test("disables purchase when the monotonic hold has expired", async () => {
@@ -337,22 +326,23 @@ test("disables purchase when the monotonic hold has expired", async () => {
   const expiresAtEpochMs = Date.parse(
     activeSnapshot.session.inventoryHold.expiresAt,
   );
-  const rendered = await renderCheckoutScreen({
-    client,
-    context,
-    initialResult: {
-      snapshot: activeSnapshot,
-      clockAnchor: {
-        expiresAtEpochMs,
-        monotonicAtAnchorMs: performance.now(),
-        requestStartedAtMonotonicMs: performance.now() - 10,
-        serverEpochAtAnchorMs: expiresAtEpochMs,
+  const renderer = await render(
+    checkoutScreenElement({
+      client,
+      context,
+      initialResult: {
+        snapshot: activeSnapshot,
+        clockAnchor: {
+          expiresAtEpochMs,
+          monotonicAtAnchorMs: performance.now(),
+          requestStartedAtMonotonicMs: performance.now() - 10,
+          serverEpochAtAnchorMs: expiresAtEpochMs,
+        },
       },
-    },
-  });
+    }),
+  );
 
-  expect(rendered.getButtonByText("Purchase").props.disabled).toBe(true);
-  await rendered.unmount();
+  expect(getButtonByText(renderer.root, "Purchase").props.disabled).toBe(true);
 });
 
 afterEach(() => {

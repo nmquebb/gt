@@ -121,12 +121,12 @@ function anchorWithRemaining(remainingMs: number): ClockAnchor {
 
 const { render } = createReactTestHarness();
 
-async function renderCountdown(clockAnchor: ClockAnchor) {
+function holdCountdownElement(clockAnchor: ClockAnchor) {
   const store = createCheckoutStore({ snapshot, clockAnchor });
-  return render(
+  return (
     <CheckoutProvider store={store}>
       <HoldCountdown />
-    </CheckoutProvider>,
+    </CheckoutProvider>
   );
 }
 
@@ -138,7 +138,9 @@ afterEach(() => {
 test("counts down from the hydrated monotonic clock anchor", async () => {
   const now = { value: 1_000 };
   const timerWindow = installClock(now);
-  const renderer = await renderCountdown(anchorWithRemaining(65_000));
+  const renderer = await render(
+    holdCountdownElement(anchorWithRemaining(65_000)),
+  );
 
   expect(textContent(renderer.root.findByType("p"))).toContain(
     "Hold expires in 1:05",
@@ -158,11 +160,9 @@ test("counts down from the hydrated monotonic clock anchor", async () => {
 test("renders zero without attempting hold recovery", async () => {
   const now = { value: 2_000 };
   installClock(now);
-  const renderer = await renderCountdown(anchorWithRemaining(500));
+  const renderer = await render(holdCountdownElement(anchorWithRemaining(500)));
 
   expect(textContent(renderer.root.findByType("p"))).toContain(
     "Hold expires now",
   );
-
-  await act(async () => renderer.unmount());
 });
