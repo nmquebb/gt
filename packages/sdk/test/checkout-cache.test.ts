@@ -60,16 +60,27 @@ describe("checkout query cache", () => {
   test("an equal revision refreshes only the incoming clock anchor", () => {
     const queryClient = new QueryClient();
     const current = stateAtRevision(1);
-    const incoming = stateAtRevision(1);
+    const incomingSnapshot = checkoutSnapshotFixture({
+      revision: 1,
+      expiresAt: "2026-07-27T17:02:30.000Z",
+    });
+    const incoming: CheckoutCommandResult = {
+      snapshot: incomingSnapshot,
+      clockAnchor: clockAnchorFixture(incomingSnapshot, {
+        monotonicAtAnchorMs: 200,
+      }),
+    };
     applyCheckoutState(queryClient, sessionId, current);
 
     expect(applyCheckoutState(queryClient, sessionId, incoming)).toBe(
       "clock_refreshed",
     );
-    expect(getCheckoutState(queryClient, sessionId)).toEqual({
-      snapshot: current.snapshot,
-      clockAnchor: incoming.clockAnchor,
-    });
+    const cached = getCheckoutState(queryClient, sessionId);
+    expect(cached?.snapshot).toBe(current.snapshot);
+    expect(cached?.snapshot.session.inventoryHold.expiresAt).toBe(
+      "2026-07-27T17:01:30.000Z",
+    );
+    expect(cached?.clockAnchor).toEqual(incoming.clockAnchor);
   });
 
   test("a newer checkout result replaces the matching cached state", () => {
