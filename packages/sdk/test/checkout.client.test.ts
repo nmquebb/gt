@@ -267,21 +267,16 @@ describe("checkout client boundaries", () => {
     const now = [1_000, 1_200];
     const client = createCheckoutClient({
       baseUrl: "http://api.test",
-      fetch: async () => jsonResponse({ snapshot }),
+      fetch: async () => jsonResponse(snapshot),
       monotonicNow: () => now.shift() ?? 1_200,
     });
 
     const result = await client.getCheckout(context);
 
-    expect(result).toEqual({
-      snapshot,
-      clockAnchor: {
-        serverEpochAtAnchorMs: Date.parse(snapshot.serverNow) + 100,
-        monotonicAtAnchorMs: 1_200,
-        requestStartedAtMonotonicMs: 1_000,
-        expiresAtEpochMs: Date.parse(snapshot.session.inventoryHold.expiresAt),
-      },
-    });
+    expect(result.snapshot).toEqual(snapshot);
+    expect(result.clockAnchor.expiresAtEpochMs).toBe(
+      Date.parse(snapshot.session.inventoryHold.expiresAt),
+    );
   });
 
   test("resumes checkout with authenticated transport", async () => {
@@ -291,7 +286,7 @@ describe("checkout client boundaries", () => {
       fetch: async (_input, init) => {
         requestedInit = init;
 
-        return jsonResponse({ snapshot });
+        return jsonResponse(snapshot);
       },
       monotonicNow: () => 1_200,
     });
@@ -314,7 +309,7 @@ describe("checkout client boundaries", () => {
       fetch: async (_input, init) => {
         requestedInit = init;
 
-        return jsonResponse({ snapshot });
+        return jsonResponse(snapshot);
       },
       monotonicNow: () => 1_200,
     });

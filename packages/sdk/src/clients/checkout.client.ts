@@ -2,7 +2,7 @@ import { z } from "zod";
 import {
   ActivityEntrySchema,
   ApiErrorSchema,
-  CheckoutSnapshotResponseSchema,
+  CheckoutSnapshotSchema,
   CreatedCheckoutResponseSchema,
   ListingsResponseSchema,
   PurchaseResponseSchema,
@@ -11,7 +11,7 @@ import {
   type PaymentOutcome,
   type Surface,
 } from "../contracts";
-import { createClockAnchor } from "./clock-anchor";
+import { createClockAnchor, type ClockAnchor } from "./clock-anchor";
 import { CheckoutClientError } from "./client.errors";
 
 export interface CheckoutClientContext {
@@ -22,6 +22,11 @@ export interface CheckoutClientContext {
 }
 
 export type CreateCheckoutInput = CreateCheckoutSessionRequest;
+
+export interface CheckoutCommandResult {
+  snapshot: CheckoutSnapshot;
+  clockAnchor: ClockAnchor;
+}
 
 export interface RealtimeSocketEvent {
   data?: unknown;
@@ -177,6 +182,24 @@ export function createCheckoutClient({
     };
   }
 
+  async function snapshotCommand(
+    operation: string,
+    send: () => Promise<Response>,
+  ): Promise<CheckoutCommandResult> {
+    const timing = { requestStartedAtMs: monotonicNow() };
+    const snapshot = await request(
+      CheckoutSnapshotSchema,
+      operation,
+      send,
+      timing,
+    );
+
+    return {
+      snapshot,
+      clockAnchor: clockAnchor(snapshot, timing as Required<RequestTiming>),
+    };
+  }
+
   return {
     listListings: () =>
       request(ListingsResponseSchema, "list_listings", () =>
@@ -187,13 +210,13 @@ export function createCheckoutClient({
         fetch(endpoint(baseUrl, "/checkout-sessions"), jsonInit("POST", input)),
       ),
     getCheckout: (context: CheckoutClientContext) =>
-      checkoutCommand(CheckoutSnapshotResponseSchema, "get_checkout", () =>
+      snapshotCommand("get_checkout", () =>
         fetch(endpoint(baseUrl, `/checkout-sessions/${context.sessionId}`), {
           headers: authHeaders(context),
         }),
       ),
     leave: (context: CheckoutClientContext) =>
-      checkoutCommand(CheckoutSnapshotResponseSchema, "leave_checkout", () =>
+      snapshotCommand("leave_checkout", () =>
         fetch(
           endpoint(baseUrl, `/checkout-sessions/${context.sessionId}`),
           jsonInit(
@@ -207,7 +230,7 @@ export function createCheckoutClient({
         ),
       ),
     resume: (context: CheckoutClientContext) =>
-      checkoutCommand(CheckoutSnapshotResponseSchema, "resume_checkout", () =>
+      snapshotCommand("resume_checkout", () =>
         fetch(
           endpoint(
             baseUrl,
@@ -217,7 +240,7 @@ export function createCheckoutClient({
         ),
       ),
     acceptOffer: (context: CheckoutClientContext, offerVersion: number) =>
-      checkoutCommand(CheckoutSnapshotResponseSchema, "accept_offer", () =>
+      snapshotCommand("accept_offer", () =>
         fetch(
           endpoint(
             baseUrl,
@@ -256,7 +279,7 @@ export function createCheckoutClient({
         ),
       ),
     reprice: (context: CheckoutClientContext, increaseCents?: number) =>
-      checkoutCommand(CheckoutSnapshotResponseSchema, "reprice_checkout", () =>
+      snapshotCommand("reprice_checkout", () =>
         fetch(
           endpoint(
             baseUrl,
@@ -270,7 +293,7 @@ export function createCheckoutClient({
         ),
       ),
     expire: (context: CheckoutClientContext) =>
-      checkoutCommand(CheckoutSnapshotResponseSchema, "expire_checkout", () =>
+      snapshotCommand("expire_checkout", () =>
         fetch(
           endpoint(
             baseUrl,
@@ -329,9 +352,6 @@ export function createCheckoutClient({
 }
 
 export type CheckoutClient = ReturnType<typeof createCheckoutClient>;
-export type CheckoutCommandResult = Awaited<
-  ReturnType<CheckoutClient["getCheckout"]>
->;
 export type CreatedCheckoutClientResult = Awaited<
   ReturnType<CheckoutClient["createCheckout"]>
 >;

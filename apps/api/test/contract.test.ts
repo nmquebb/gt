@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   CheckoutSessionUpdatedEventSchema,
-  CheckoutSnapshotResponseSchema,
+  CheckoutSnapshotSchema,
   ListingsResponseSchema,
 } from "@checkout/sdk/contracts";
 import { createApp } from "../src/app";
@@ -89,7 +89,7 @@ describe("public contracts", () => {
       expect(realtimeBytes[0]).not.toContain(forbidden);
     }
 
-    CheckoutSnapshotResponseSchema.parse(JSON.parse(restBytes));
+    CheckoutSnapshotSchema.parse(JSON.parse(restBytes));
     CheckoutSessionUpdatedEventSchema.parse(JSON.parse(realtimeBytes[0] ?? ""));
   });
 });

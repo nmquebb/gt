@@ -81,7 +81,7 @@ export function createDevRoutes(dependencies: AppDependencies) {
           increaseCents: context.req.valid("json").increaseCents,
         });
 
-        return context.json({ snapshot });
+        return context.json(snapshot);
       },
     )
     .post(
@@ -97,7 +97,7 @@ export function createDevRoutes(dependencies: AppDependencies) {
           resumeToken,
         });
 
-        return context.json({ snapshot });
+        return context.json(snapshot);
       },
     )
     .put(

@@ -8,7 +8,7 @@ import {
 import {
   ActivityEntrySchema,
   CheckoutSessionUpdatedEventSchema,
-  CheckoutSnapshotResponseSchema,
+  CheckoutSnapshotSchema,
   ListingsResponseSchema,
   PurchaseResponseSchema,
 } from "@checkout/sdk/contracts";
@@ -116,7 +116,7 @@ test("continues one checkout across the prototype workflows", async ({
         data: { surface: "mobile" },
       },
     );
-    await decode(resumed, CheckoutSnapshotResponseSchema);
+    await decode(resumed, CheckoutSnapshotSchema);
 
     await page.getByRole("button", { name: "Back to listings" }).click();
     await expect(page).toHaveURL("/");
@@ -127,9 +127,9 @@ test("continues one checkout across the prototype workflows", async ({
     );
     const readySnapshot = await decode(
       afterWebLeave,
-      CheckoutSnapshotResponseSchema,
+      CheckoutSnapshotSchema,
     );
-    expect(readySnapshot.snapshot.status).toBe("ready");
+    expect(readySnapshot.status).toBe("ready");
 
     await page.goto(checkoutUrl.toString());
     await expect(page.getByText("Live updates connected")).toBeVisible();
@@ -178,9 +178,9 @@ test("continues one checkout across the prototype workflows", async ({
     );
     const completed = await decode(
       completedResponse,
-      CheckoutSnapshotResponseSchema,
+      CheckoutSnapshotSchema,
     );
-    expect(completed.snapshot.session.order?.id).toMatch(/^ord_/);
+    expect(completed.session.order?.id).toMatch(/^ord_/);
 
     const activityResponse = await request.get(
       `${apiUrl}/v1/dev/checkout-sessions/${sessionId}/activity`,

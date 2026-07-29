@@ -103,10 +103,6 @@ export const CreatedCheckoutResponseSchema = z.object({
   links: CheckoutLinksSchema,
 });
 
-export const CheckoutSnapshotResponseSchema = z.object({
-  snapshot: CheckoutSnapshotSchema,
-});
-
 export const PurchaseResponseSchema = z.object({
   disposition: z.enum(["pending", "completed", "failed"]),
   snapshot: CheckoutSnapshotSchema,
@@ -138,9 +134,6 @@ export type PurchaseRequest = z.infer<typeof PurchaseRequestSchema>;
 export type CheckoutLinks = z.infer<typeof CheckoutLinksSchema>;
 export type CreatedCheckoutResponse = z.infer<
   typeof CreatedCheckoutResponseSchema
->;
-export type CheckoutSnapshotResponse = z.infer<
-  typeof CheckoutSnapshotResponseSchema
 >;
 export type PurchaseResponse = z.infer<typeof PurchaseResponseSchema>;
 export type ApiError = z.infer<typeof ApiErrorSchema>;

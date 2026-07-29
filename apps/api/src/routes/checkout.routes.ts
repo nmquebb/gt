@@ -70,7 +70,7 @@ export function createCheckoutRoutes(dependencies: AppDependencies) {
           resumeToken,
         });
 
-        return context.json({ snapshot });
+        return context.json(snapshot);
       },
     )
     .delete(
@@ -91,7 +91,7 @@ export function createCheckoutRoutes(dependencies: AppDependencies) {
           deviceId: body.deviceId,
         });
 
-        return context.json({ snapshot });
+        return context.json(snapshot);
       },
     )
     .put(
@@ -112,7 +112,7 @@ export function createCheckoutRoutes(dependencies: AppDependencies) {
           resumeToken,
         });
 
-        return context.json({ snapshot });
+        return context.json(snapshot);
       },
     )
     .put(
@@ -134,7 +134,7 @@ export function createCheckoutRoutes(dependencies: AppDependencies) {
           resumeToken,
         });
 
-        return context.json({ snapshot });
+        return context.json(snapshot);
       },
     )
     .post(

@@ -57,9 +57,7 @@ describe("checkout routes", () => {
     );
     expect(readResponse.status).toBe(200);
     expect(await readResponse.json()).toMatchObject({
-      snapshot: {
-        session: { id: created.snapshot.session.id },
-      },
+      session: { id: created.snapshot.session.id },
     });
   });
 
@@ -100,7 +98,7 @@ describe("checkout routes", () => {
     });
 
     expect(left.status).toBe(200);
-    expect((await left.json()).snapshot.status).toBe("ready");
+    expect((await left.json()).status).toBe("ready");
     expect(harness.repository.getListing("lst_101_a_1")?.status).toBe("held");
   });
 
@@ -258,8 +256,8 @@ describe("checkout routes", () => {
 
     expect(attached.status).toBe(200);
     expect(repeated.status).toBe(200);
-    expect(attachedBody.snapshot.session.revision).toBe(1);
-    expect(repeatedBody.snapshot.session.revision).toBe(1);
+    expect(attachedBody.session.revision).toBe(1);
+    expect(repeatedBody.session.revision).toBe(1);
     expect(
       harness.activity
         .list(created.snapshot.session.id)
@@ -304,7 +302,7 @@ describe("checkout routes", () => {
     expect(staleBody.code).toBe("OFFER_VERSION_MISMATCH");
     expect(staleBody.snapshot?.session.offer.currentVersion).toBe(2);
     expect(current.status).toBe(200);
-    expect(currentBody.snapshot.status).toBe("ready");
+    expect(currentBody.status).toBe("ready");
   });
 
   test("rejects missing and empty idempotency keys", async () => {
@@ -462,7 +460,7 @@ describe("development checkout routes", () => {
       true,
     );
     expect(repriced.status).toBe(200);
-    expect(repricedBody.snapshot.session.offer.currentTotalCents).toBe(14_500);
+    expect(repricedBody.session.offer.currentTotalCents).toBe(14_500);
   });
 
   test("rejects invalid development reprices with the canonical price-adjustment code", async () => {
@@ -508,7 +506,7 @@ describe("development checkout routes", () => {
     );
 
     expect(response.status).toBe(200);
-    expect((await response.json()).snapshot.status).toBe("expired");
+    expect((await response.json()).status).toBe("expired");
   });
 
   test("accepts only supported next-payment outcomes", async () => {
