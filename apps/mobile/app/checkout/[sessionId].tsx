@@ -10,8 +10,8 @@ import {
 import {
   parseCheckoutDeepLink,
   type CheckoutRouteContext,
-} from "../../src/checkout-route";
-import { CheckoutScreen } from "../../src/checkout-screen";
+} from "@/features/checkout/parse-checkout-deep-link";
+import { CheckoutScreen } from "@/features/checkout/checkout-screen";
 import { getMobileDeviceId } from "@/lib/device-id";
 import { ScreenShell } from "@/components/screen-shell";
 import { styles } from "@/theme/styles";

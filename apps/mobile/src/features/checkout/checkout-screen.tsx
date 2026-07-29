@@ -1,141 +1,26 @@
-import { randomUUID } from "expo-crypto";
 import {
-  checkoutCopy,
   formatUsd,
-  remainingHoldMs,
-  useAcceptCheckoutOffer,
   useCheckoutRealtime,
   useCheckoutState,
-  usePurchaseCheckout,
   type CheckoutClient,
   type CheckoutClientContext,
   type CheckoutCommandResult,
-  type CheckoutSnapshot,
   type CheckoutState,
-  type ClockAnchor,
-  type RealtimeStatus,
 } from "@checkout/sdk";
 import { useNavigation } from "expo-router";
-import { useEffect, useRef, useState } from "react";
-import { Pressable, Text, View } from "react-native";
-import {
-  checkoutStatusPresentation,
-  realtimeStatusCopy,
-  type CheckoutStatusTone,
-} from "./checkout-presentation";
-import { HoldCountdown } from "./hold-countdown";
+import { useEffect, useRef } from "react";
+import { Text, View } from "react-native";
 import { ScreenShell } from "@/components/screen-shell";
 import { styles } from "@/theme/styles";
+import { CheckoutAction } from "./components/checkout-action";
+import { CheckoutStatusPanel } from "./components/checkout-status-panel";
+import { HoldCountdown } from "./components/hold-countdown";
+import { OfferAcceptance } from "./components/offer-acceptance";
 
 type CheckoutScreenClient = Pick<
   CheckoutClient,
   "acceptOffer" | "leave" | "openEvents" | "purchase"
 >;
-
-const statusToneStyles = {
-  danger: styles.statusDanger,
-  info: styles.statusInfo,
-  neutral: styles.statusNeutral,
-  success: styles.statusSuccess,
-  warning: styles.statusWarning,
-} satisfies Record<CheckoutStatusTone, object>;
-
-interface OfferAcceptanceProps {
-  client: Pick<CheckoutClient, "acceptOffer">;
-  context: CheckoutClientContext;
-  currentVersion: number;
-}
-
-function OfferAcceptance({
-  client,
-  context,
-  currentVersion,
-}: OfferAcceptanceProps) {
-  const acceptOffer = useAcceptCheckoutOffer(client, context);
-
-  return (
-    <View style={styles.section}>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityState={{ disabled: acceptOffer.isPending }}
-        disabled={acceptOffer.isPending}
-        onPress={() => acceptOffer.mutate(currentVersion)}
-        style={[
-          styles.button,
-          acceptOffer.isPending ? styles.buttonDisabled : undefined,
-        ]}
-      >
-        <Text style={styles.buttonText}>
-          {acceptOffer.isPending ? "Accepting price…" : "Accept new price"}
-        </Text>
-      </Pressable>
-      {acceptOffer.error ? (
-        <Text role="alert" style={styles.error}>
-          The current price could not be accepted. Please try again.
-        </Text>
-      ) : null}
-    </View>
-  );
-}
-
-interface CheckoutActionProps {
-  action: "purchase" | "retry_purchase";
-  allowedActions: CheckoutSnapshot["allowedActions"];
-  client: Pick<CheckoutClient, "purchase">;
-  clockAnchor: ClockAnchor;
-  context: CheckoutClientContext;
-}
-
-function CheckoutAction({
-  action,
-  allowedActions,
-  client,
-  clockAnchor,
-  context,
-}: CheckoutActionProps) {
-  const purchase = usePurchaseCheckout(client, context, randomUUID);
-  const [remainingMs, setRemainingMs] = useState(() =>
-    remainingHoldMs(clockAnchor, performance.now()),
-  );
-
-  useEffect(() => {
-    function update() {
-      setRemainingMs(remainingHoldMs(clockAnchor, performance.now()));
-    }
-
-    update();
-    const interval = globalThis.setInterval(update, 1_000);
-
-    return () => globalThis.clearInterval(interval);
-  }, [clockAnchor]);
-
-  const enabled =
-    allowedActions.includes(action) && remainingMs > 0 && !purchase.isPending;
-  const label = purchase.isPending
-    ? "Completing purchase…"
-    : action === "retry_purchase"
-      ? "Retry purchase"
-      : "Purchase";
-
-  return (
-    <View style={styles.section}>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityState={{ disabled: !enabled }}
-        disabled={!enabled}
-        onPress={() => purchase.mutate()}
-        style={[styles.button, enabled ? undefined : styles.buttonDisabled]}
-      >
-        <Text style={styles.buttonText}>{label}</Text>
-      </Pressable>
-      {purchase.error ? (
-        <Text role="alert" style={styles.error}>
-          The purchase could not be completed. Please try again.
-        </Text>
-      ) : null}
-    </View>
-  );
-}
 
 function CheckoutPurchaseProgress() {
   return (
@@ -143,30 +28,6 @@ function CheckoutPurchaseProgress() {
       <View style={[styles.button, styles.buttonDisabled]}>
         <Text style={styles.buttonText}>Completing purchase…</Text>
       </View>
-    </View>
-  );
-}
-
-function CheckoutStatusPanel({
-  realtimeStatus,
-  status,
-}: {
-  realtimeStatus: RealtimeStatus;
-  status: CheckoutSnapshot["status"];
-}) {
-  const presentation = checkoutStatusPresentation[status];
-  const copy = checkoutCopy[status];
-
-  return (
-    <View
-      accessibilityLiveRegion="polite"
-      style={[styles.statusPanel, statusToneStyles[presentation.tone]]}
-    >
-      <Text style={styles.statusHeading}>{copy.heading}</Text>
-      <Text style={styles.statusBody}>{copy.description}</Text>
-      <Text style={styles.statusConnection}>
-        {realtimeStatusCopy[realtimeStatus]}
-      </Text>
     </View>
   );
 }

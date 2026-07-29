@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { parseCheckoutDeepLink } from "./checkout-route";
+import { parseCheckoutDeepLink } from "./parse-checkout-deep-link";
 
 test("parses one valid gametime checkout link", () => {
   expect(
