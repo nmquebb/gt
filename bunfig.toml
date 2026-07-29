@@ -1,0 +1,5 @@
+[test]
+pathIgnorePatterns = ["apps/web/e2e/**"]
+
+[install]
+linker = "hoisted"

@@ -1,0 +1,9 @@
+.worktrees/
+node_modules/
+dist/
+.next/
+*.tsbuildinfo
+.expo/
+coverage/
+playwright-report/
+test-results/

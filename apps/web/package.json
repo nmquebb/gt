@@ -1,0 +1,32 @@
+{
+  "name": "@checkout/web",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "next dev --hostname 127.0.0.1 --port 8000",
+    "build": "next build",
+    "start": "next start --hostname 127.0.0.1 --port 8000",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@checkout/sdk": "workspace:*",
+    "@tanstack/react-query": "^5.101.4",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "lucide-react": "^0.468.0",
+    "next": "^16.2.12",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "tailwind-merge": "^3.4.1",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.3.3",
+    "@types/node": "^26.1.2",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "@types/react-test-renderer": "19.1.0",
+    "react-test-renderer": "19.2.3",
+    "tailwindcss": "^4.3.3"
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "name": "@checkout/sdk",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./checkout-client": "./src/clients/checkout.client.ts",
+    "./contracts": "./src/contracts/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "zod": "^4.4.3",
+    "zustand": "^5.0.14"
+  },
+  "devDependencies": {
+    "@tanstack/react-query": "^5.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-test-renderer": "19.1.0",
+    "react": "19.2.3",
+    "react-test-renderer": "19.2.3"
+  },
+  "peerDependencies": {
+    "@tanstack/react-query": "^5.0.0",
+    "react": "19.2.3"
+  }
+}

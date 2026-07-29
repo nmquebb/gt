@@ -1,0 +1,9 @@
+{
+  "expo": {
+    "name": "Gametime Checkout",
+    "slug": "gametime-checkout",
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}

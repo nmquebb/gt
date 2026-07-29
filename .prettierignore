@@ -1,0 +1,11 @@
+.agents/
+.superpowers/
+.worktrees/
+docs/
+node_modules/
+dist/
+.next/
+.expo/
+coverage/
+playwright-report/
+test-results/
