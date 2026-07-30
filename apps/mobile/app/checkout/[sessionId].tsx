@@ -131,7 +131,7 @@ function CheckoutBootstrap({ sessionId, token }: CheckoutRouteContext) {
         >
           {presentation.message}
         </Text>
-        {failure === "offline" ? (
+        {failure === "offline" && (
           <Pressable
             accessibilityRole="button"
             onPress={() => setRetryAttempt((attempt) => attempt + 1)}
@@ -141,7 +141,7 @@ function CheckoutBootstrap({ sessionId, token }: CheckoutRouteContext) {
               Retry
             </Text>
           </Pressable>
-        ) : null}
+        )}
       </View>
     </ScreenShell>
   );

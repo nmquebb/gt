@@ -33,11 +33,11 @@ export function OfferAcceptance({
           {acceptOffer.isPending ? "Accepting price…" : "Accept new price"}
         </Text>
       </Pressable>
-      {acceptOffer.error ? (
+      {Boolean(acceptOffer.error) && (
         <Text role="alert" style={styles.error}>
           The current price could not be accepted. Please try again.
         </Text>
-      ) : null}
+      )}
     </View>
   );
 }

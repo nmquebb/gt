@@ -40,11 +40,11 @@ function OfferAcceptance({ context, currentVersion }: OfferAcceptanceProps) {
           "Accept new price"
         )}
       </Button>
-      {acceptOffer.error ? (
+      {Boolean(acceptOffer.error) && (
         <p className="text-sm text-red-700" role="alert">
           The current price could not be accepted. Please try again.
         </p>
-      ) : null}
+      )}
     </div>
   );
 }
@@ -70,27 +70,27 @@ export function CheckoutSummary() {
         </p>
         <div className="mt-4 flex flex-wrap items-end justify-between gap-3">
           <div className="flex items-baseline gap-2">
-            {requiresOfferReview ? (
+            {requiresOfferReview && (
               <span
                 aria-label={`Previously accepted price ${formatUsd(offer.acceptedTotalCents)}`}
                 className="text-sm text-neutral-500 line-through decoration-2"
               >
                 {formatUsd(offer.acceptedTotalCents)}
               </span>
-            ) : null}
+            )}
             <p className="text-2xl font-semibold tracking-tight">
               {formatUsd(offer.currentTotalCents)}
             </p>
           </div>
-          {canAcceptOffer ? (
+          {canAcceptOffer && (
             <OfferAcceptance
               context={context}
               currentVersion={offer.currentVersion}
             />
-          ) : null}
+          )}
         </div>
       </div>
-      {order === undefined ? null : (
+      {order !== undefined && (
         <p className="text-sm text-emerald-700">
           Order <span data-testid="order-id">{order.id}</span> confirmed
         </p>

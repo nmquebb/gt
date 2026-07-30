@@ -85,27 +85,27 @@ function CheckoutContent({
             Section {listing.section} · Row {listing.row} · Seat {listing.seat}
           </Text>
           <View style={styles.priceRow}>
-            {requiresOfferReview ? (
+            {requiresOfferReview && (
               <Text
                 accessibilityLabel={`Previously accepted price ${formatUsd(offer.acceptedTotalCents)}`}
                 style={styles.previousPrice}
               >
                 {formatUsd(offer.acceptedTotalCents)}
               </Text>
-            ) : null}
+            )}
             <Text style={styles.price}>
               {formatUsd(offer.currentTotalCents)}
             </Text>
           </View>
         </View>
-        {showAcceptOffer ? (
+        {showAcceptOffer && (
           <OfferAcceptance
             client={client}
             context={context}
             currentVersion={offer.currentVersion}
           />
-        ) : null}
-        {order === undefined ? null : (
+        )}
+        {order !== undefined && (
           <Text style={styles.success}>Order {order.id} confirmed</Text>
         )}
       </View>
@@ -115,13 +115,13 @@ function CheckoutContent({
         status={snapshot.status}
       />
 
-      {isTerminal ? null : (
+      {!isTerminal && (
         <View style={[styles.card, styles.actionCard]}>
           <HoldCountdown clockAnchor={clockAnchor} />
           {purchaseAction === undefined ? (
-            snapshot.status === "purchase_pending" ? (
+            snapshot.status === "purchase_pending" && (
               <CheckoutPurchaseProgress />
-            ) : null
+            )
           ) : (
             <CheckoutAction
               action={purchaseAction}

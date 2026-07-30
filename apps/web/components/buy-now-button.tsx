@@ -63,7 +63,7 @@ export function BuyNowButton({ listingId, unavailable }: BuyNowButtonProps) {
       >
         {isPending ? "Starting checkout…" : "Buy now"}
       </Button>
-      {error === null ? null : (
+      {error !== null && (
         <p aria-live="polite" className="max-w-48 text-xs text-red-700">
           {error}
         </p>

@@ -56,7 +56,7 @@ export function CheckoutExit({
       >
         {isLeaving ? "Leaving checkout…" : "Back to listings"}
       </Button>
-      {error === undefined ? null : (
+      {error !== undefined && (
         <p aria-live="polite" className="text-sm text-red-700">
           {error}
         </p>

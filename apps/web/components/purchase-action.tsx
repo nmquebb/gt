@@ -37,12 +37,17 @@ export function PurchaseAction({
       : undefined;
 
   if (action === undefined) {
-    return status === "purchase_pending" ? (
-      <output className="flex items-center text-sm text-neutral-600">
-        <LoaderCircle aria-hidden="true" className="mr-2 size-4 animate-spin" />
-        Completing purchase…
-      </output>
-    ) : null;
+    return (
+      status === "purchase_pending" && (
+        <output className="flex items-center text-sm text-neutral-600">
+          <LoaderCircle
+            aria-hidden="true"
+            className="mr-2 size-4 animate-spin"
+          />
+          Completing purchase…
+        </output>
+      )
+    );
   }
 
   const enabled =
@@ -80,11 +85,11 @@ export function PurchaseAction({
           "Purchase"
         )}
       </Button>
-      {purchase.error ? (
+      {Boolean(purchase.error) && (
         <p className="text-sm text-red-700" role="alert">
           The purchase could not be completed. Please try again.
         </p>
-      ) : null}
+      )}
     </div>
   );
 }

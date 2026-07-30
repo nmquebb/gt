@@ -59,11 +59,11 @@ export function CheckoutAction({
       >
         <Text style={styles.buttonText}>{label}</Text>
       </Pressable>
-      {purchase.error ? (
+      {Boolean(purchase.error) && (
         <Text role="alert" style={styles.error}>
           The purchase could not be completed. Please try again.
         </Text>
-      ) : null}
+      )}
     </View>
   );
 }

@@ -28,7 +28,9 @@ export function ScenarioControls() {
 
   const isChangingScenario =
     reprice.isPending || expire.isPending || setNextOutcome.isPending;
-  const hasError = reprice.error || expire.error || setNextOutcome.error;
+  const hasError = Boolean(
+    reprice.error || expire.error || setNextOutcome.error,
+  );
 
   function chooseOutcome(outcome: PaymentOutcome) {
     setNextOutcome.mutate(outcome, {
@@ -53,9 +55,9 @@ export function ScenarioControls() {
         <span>{isSetting ? "Setting outcome…" : label}</span>
         {isSetting ? (
           <LoaderCircle aria-hidden="true" className="size-4 animate-spin" />
-        ) : isSelected ? (
-          <Check aria-hidden="true" className="size-4" />
-        ) : null}
+        ) : (
+          isSelected && <Check aria-hidden="true" className="size-4" />
+        )}
       </Button>
     );
   }
@@ -110,14 +112,14 @@ export function ScenarioControls() {
         </p>
         {outcomeButton("success", "Next payment succeeds")}
         {outcomeButton("failure", "Next payment fails")}
-        {hasError ? (
+        {hasError && (
           <p
             className="rounded-md bg-red-50 px-3 py-2 text-xs text-red-700"
             role="alert"
           >
             The scenario change failed. Please try again.
           </p>
-        ) : null}
+        )}
       </div>
     </Collapsible>
   );

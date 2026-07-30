@@ -18,11 +18,11 @@ export function OpenInAppButton() {
       >
         {openInApp.isPending ? "Opening app…" : "Open in app"}
       </Button>
-      {openInApp.error ? (
+      {Boolean(openInApp.error) && (
         <p className="text-sm text-red-700" role="alert">
           The app could not be opened. Please try again.
         </p>
-      ) : null}
+      )}
     </div>
   );
 }
