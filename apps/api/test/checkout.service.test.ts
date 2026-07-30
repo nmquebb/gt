@@ -12,24 +12,46 @@ import {
 import { CheckoutService } from "../src/services/checkout/checkout.service";
 import { SEEDED_LISTINGS } from "../src/fixtures";
 
+class TestTaskScheduler {
+  readonly tasks: Array<{
+    delayMs: number;
+    run: () => Promise<void>;
+  }> = [];
+
+  schedule(task: () => Promise<void>, delayMs: number): void {
+    this.tasks.push({ delayMs, run: task });
+  }
+
+  async runNext(): Promise<void> {
+    const task = this.tasks.shift();
+    if (!task) {
+      throw new Error("No scheduled task");
+    }
+    await task.run();
+  }
+}
+
 function setup() {
   let now = new Date("2026-07-29T17:00:00.000Z");
   const repository = new CheckoutMemoryRepository(SEEDED_LISTINGS);
   const locks = new InMemoryKeyedLock();
   const payment = new DelayedPaymentSimulator({ delayMs: 0 });
   const realtime = new RealtimeHub();
+  const scheduler = new TestTaskScheduler();
   const service = new CheckoutService(
     repository,
     locks,
     payment,
     realtime,
     () => new Date(now),
+    scheduler,
   );
 
   return {
     payment,
     realtime,
     repository,
+    scheduler,
     service,
     setNow: (value: string) => {
       now = new Date(value);
@@ -189,6 +211,80 @@ test("expires from authoritative server time when rejecting a command", async ()
     cause: "expired",
     snapshot: { status: "expired" },
   });
+});
+
+test("scheduled hold deadline expires checkout and publishes canonical state", async () => {
+  const { realtime, repository, scheduler, service, setNow } = setup();
+  const created = await createCheckout(service);
+  const sessionId = created.snapshot.session.id;
+  const messages: string[] = [];
+  realtime.register(sessionId, {
+    send(message): void {
+      messages.push(String(message));
+    },
+  });
+
+  expect(scheduler.tasks.map(({ delayMs }) => delayMs)).toEqual([90_000]);
+
+  setNow("2026-07-29T17:01:30.000Z");
+  await scheduler.runNext();
+
+  expect(repository.getSession(sessionId)?.phase).toBe("expired");
+  expect(repository.getListing("lst_101_a_1")?.status).toBe("available");
+  expect(
+    repository
+      .listActivity(sessionId)
+      .filter((entry) => entry.type === "inventory_hold_expired"),
+  ).toHaveLength(1);
+  expect(messages).toHaveLength(1);
+  expect(JSON.parse(messages[0] ?? "{}")).toMatchObject({
+    cause: "expired",
+    snapshot: {
+      status: "expired",
+      allowedActions: [],
+      session: { phase: "expired" },
+    },
+  });
+});
+
+test("an early scheduled task reschedules the authoritative remaining hold", async () => {
+  const { repository, scheduler, service, setNow } = setup();
+  const created = await createCheckout(service);
+  const sessionId = created.snapshot.session.id;
+
+  setNow("2026-07-29T17:01:00.000Z");
+  await scheduler.runNext();
+
+  expect(repository.getSession(sessionId)?.phase).toBe("active");
+  expect(scheduler.tasks.map(({ delayMs }) => delayMs)).toEqual([30_000]);
+});
+
+test("scheduled expiration is a no-op after another terminal transition", async () => {
+  const { realtime, repository, scheduler, service, setNow } = setup();
+  const created = await createCheckout(service);
+  const sessionId = created.snapshot.session.id;
+  const messages: string[] = [];
+  realtime.register(sessionId, {
+    send(message): void {
+      messages.push(String(message));
+    },
+  });
+  await service.forceExpire({
+    sessionId,
+    resumeToken: created.resumeToken,
+  });
+  expect(messages).toHaveLength(1);
+
+  setNow("2026-07-29T17:01:30.000Z");
+  await scheduler.runNext();
+
+  expect(repository.getSession(sessionId)?.phase).toBe("expired");
+  expect(
+    repository
+      .listActivity(sessionId)
+      .filter((entry) => entry.type === "inventory_hold_expired"),
+  ).toHaveLength(1);
+  expect(messages).toHaveLength(1);
 });
 
 test("publishes persisted updates through listing-unavailable errors", async () => {

@@ -22,6 +22,10 @@ import type {
 import type { DelayedPaymentSimulator } from "../../providers/payment-simulator";
 import type { RealtimeHub } from "../../providers/realtime-hub";
 import {
+  TimeoutTaskScheduler,
+  type TaskScheduler,
+} from "../../providers/task-scheduler";
+import {
   CheckoutSessionExpired,
   CheckoutSessionNotFound,
   CheckoutError,
@@ -114,6 +118,7 @@ export class CheckoutService {
     private readonly payment: DelayedPaymentSimulator,
     private readonly realtime: RealtimeHub,
     private readonly now: () => Date = () => new Date(),
+    private readonly scheduler: TaskScheduler = new TimeoutTaskScheduler(),
   ) {}
 
   async listListings(): Promise<ListingsResponse> {
@@ -250,6 +255,10 @@ export class CheckoutService {
         },
       );
       this.publishUpdates(mutation.updates);
+      this.scheduleExpiration(
+        mutation.value.snapshot.session.id,
+        mutation.value.snapshot.session.inventoryHold.expiresAt,
+      );
       return mutation.value;
     } catch (error) {
       if (error instanceof CheckoutError) {
@@ -572,6 +581,39 @@ export class CheckoutService {
         this.publishUpdates(error.updates);
       }
       throw error;
+    }
+  }
+
+  private scheduleExpiration(sessionId: string, expiresAt: string): void {
+    const delayMs = Math.max(0, Date.parse(expiresAt) - this.now().getTime());
+    this.scheduler.schedule(
+      () => this.reconcileScheduledExpiration(sessionId),
+      delayMs,
+    );
+  }
+
+  private async reconcileScheduledExpiration(sessionId: string): Promise<void> {
+    const rescheduleAt = await this.withSession(
+      sessionId,
+      ({ session, listing, now }) => {
+        if (session.phase !== "active") {
+          return { value: undefined };
+        }
+
+        if (now.getTime() < Date.parse(session.inventoryHold.expiresAt)) {
+          return { value: session.inventoryHold.expiresAt };
+        }
+
+        const expired = this.expire(session, listing, now);
+        return {
+          value: undefined,
+          updates: [expired.update],
+        };
+      },
+    );
+
+    if (rescheduleAt !== undefined) {
+      this.scheduleExpiration(sessionId, rescheduleAt);
     }
   }
 
