@@ -49,11 +49,15 @@ export function BuyNowButton({ listingId, unavailable }: BuyNowButtonProps) {
     }
   }
 
+  if (unavailable) {
+    return null;
+  }
+
   return (
     <div className="flex w-full flex-col items-stretch gap-2 sm:w-auto sm:items-end">
       <Button
         className="w-full min-w-[168px] whitespace-nowrap sm:w-auto"
-        disabled={unavailable || isPending}
+        disabled={isPending}
         onClick={onBuyNow}
         type="button"
       >
