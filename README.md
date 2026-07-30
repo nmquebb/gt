@@ -4,53 +4,74 @@
 
 # Checkout continuity
 
-For this exercise I went the full AI route. After working through requirements and familiarizing myself with the problem I generated a summarizing document that I can then take to Codex for a proper spec/plan/implement process. 
+For this exercise I went pretty much all-in on an AI-assisted workflow. I worked through the requirements, got familiar with the problem, and wrote a summary that I could take into Codex for a spec/plan/implement/review loop.
 
-For skills I installed Superpowers. I've found it to be thorough, but also a little token heavy and slow at times. Alternatively, I thought about using Matt Pocock's suite of skills or even chunking through it in plan mode, but felt the workflow with Superpower's was more representative of how I'd treat a real feature - iterate on a spec, create a plan, implement, review.
+I installed Superpowers for that workflow. I've found it to be thorough, although it can be a little token-heavy and slow at times. I considered Matt Pocock's suite of skills or working through the project in plan mode, but Superpowers felt the most representative of how I'd handle a real feature: agree on the requirements, write a plan, implement it, and review the result.
 
-**What you built and how to run it**
+My workflow is fairly stock:
+- Brainstorming & plan with `gpt-5.6-sol` on `medium` or `high`
+- Dig in and iterate on the spec/plan
+- Implement with `gpt-5.6-terra` on `high`
+- Scan touched tests for obvious breakage or cheating
+- Adversarial review with either `gpt-5.6-sol` on `high` or if I have it available `opus-5`
+- Dig into code for correctness and code style refinement
 
-I went with a monorepo setup that resembles many of the projects I've worked on lately. Hono, Next, Expo, React Query, Tailwind. I originally had Zustand and `better-result` but they were deemed unnecessary after reviewing the initial implementation.
+Adversarial review is the only thing I may drop depending on how involved the feature was and if the skills include a heavy verification step (in this case Superpowers does).
 
-The server covers delivering static listings, creating checkout sessions and processing session events with safeguards. Clients consume an `sdk` package that distribute network calls and common logic.
+I should note that I think Superpowers is great, but it is not by any means perfect. I play around with various skill sets and methodologies constantly. In this case it was something I could use to get up and running quickly without much ceremony.
 
-The bottom of this document is the AI generated README.md that does a good job covering how to get it up and running.
+## What you built and how to run it
 
-**The checkout session state model**
+I built a monorepo with a Hono API, a Next.js web app, an Expo iOS app, and a shared SDK built around React Query and Zod. I originally included Zustand and `better-result`, but removed both after reviewing the initial implementation because they weren't earning their place.
 
-[checkout.contract.ts - Checkout session zod schemas and type definitions](packages/sdk/src/contracts/checkout.contract.ts)
+The API serves the static listings and owns the checkout state. The SDK centralizes the contracts, network calls, cache behavior, and realtime logic so the web and mobile clients don't each have to solve consistency on their own.
 
-The server owns the checkout session that is then shared by web and mobile. The record contains event/listing details, inventory hold expiration (countdown), current/accepted offer versions/prices ("accept price change" UI), payment status, lifecycle phase, and optional completed order.
+To run everything:
 
-The lifecycle moves through active, purchasing, and then completed/expired/abandoned. With each of these steps the app derives a customer facing status and allowed actions from this data. Both clients receive session snapshots (either via request or websocket events) and apply the newest revisions to keep web and mobile synchronized.
+```sh
+bun install
+bun run dev
+```
 
-**How web and mobile resume the same session**
+The implementation reference at the bottom has the individual commands, walkthrough, and full verification suite.
 
-I didn't go with a mock user or assume authentication during this exercise. Each device generates a `deviceId` that it stores locally. When the web creates a checkout session it is returned an `id` to identify the session, but also a `resumeToken` that is used to share/validate that session with mobile via deeplink. The web retains that resume token as I wanted to be sure the checkout page demonstrated SSR with relevant information and proper hydration + UX improvement. 
+## The checkout session state model
 
-**How you handle stale inventory, price changes, or duplicate completion**
+The server owns the canonical checkout session shared by web and mobile. The [`checkout.contract.ts`](packages/sdk/src/contracts/checkout.contract.ts) schema contains the event and listing details, inventory hold expiration, current and accepted offer versions and prices, payment state, lifecycle phase, and optional completed order.
 
-After the client lands on the checkout page it establishes a websocket connection. This connection immediately returns a snapshot of the latest state. From here the 2 clients are kept in sync as events are handled for price changes, accepting those changes, expiration, purchases, etc.
+The lifecycle moves through `active` and `purchasing`, then into `completed`, `expired`, or `abandoned`. The API derives the customer-facing status and allowed actions from that state rather than asking each client to interpret it independently.
 
-This websocket **is not** the mechanism that guarantees a listing is only purchased once. 
+Both clients receive full snapshots over HTTP and WebSocket. Each snapshot carries a revision, and the SDK only applies newer revisions, so a late response or event can't roll the UI back to stale state.
 
-A per client idempotency key is sent with the request to purchase the listing. The idempotency key dedupes requests coming in from a single client. If they fire off the same request multiple times the pending/failed/successful purchase is returned without creating another purchase attempt. 
+## How web and mobile resume the same session
 
-The server also maintains a lock on both the listing (probably not necessary here, but useful for a full build out) and session. These locks are the strongest purchase safeguard. Any time a purchase is attempted there is a sequence of locking the resource, validating it's current state and then either updates it, or if an error occurs returns the previous state and an error.
+I didn't mock a user or assume an authentication system for this exercise. Each device generates and stores a stable `deviceId`. When the web creates a checkout session, the API returns both a session `id` and a `resumeToken`; the **Open in app** deep link carries those values to mobile, which can then fetch and continue the same server-owned session.
 
-**What tradeoffs you made**
-**What you'd do differently with more time**
+The web retains the token so the checkout route can fetch the current session during server rendering, then hydrate the client with that snapshot and its clock anchor. That avoids showing an empty checkout first or resetting the hold countdown during hydration.
 
-Sorry, combined these 2 sections as I had a "do differently" for many of my tradeoffs.
+The `resumeToken` is intentionally a prototype-level capability token, not a replacement for production authentication. In a real system I would associate the session with the signed-in user and make explicit sharing a separate, short-lived handoff flow.
 
-- In going the full AI route I feel like I lost some comfort with the codebase. It's not just that it was all created in one big swing - it's more that without some time in the saddle to provide feedback and generate steering documents from actual work within the project you end up with a codebase that may not be entirely up to your standards or your preferred code style. I probably should've broke it down into smaller chunks and went through that feedback loop early on so the next chunk was improved, but I was concerned with trying to stay within the 2-3 hours.. but I also went over that time a bit anyways.
-- Instead of mocking auth I had to come up with the token handoff system. For this prototype the `resumeToken` setup works _fine_, but in practice the it could be handled in a more secure fashion. Instead of issuing a single resume token I would create a "share with a friend" feature that generates short lived, one time handoff tokens to assign users to a session. For the individuals I would include a request to fetch my current checkout sessions when opening on another device, and optionally navigate to it from there.
-- The websockets events return a full snapshot each time. At scale I would probably go for an initial snapshot with subsequent deltas. Sequencing would have to be hardened here too, especially in Gametime's use-case where people are probably dealing with network performance issues from high population density and already poor venue reception.
-- The presence system was thrown in because I didn't like the idea of a mobile checkout being expired if the web client navigates back to the listings page. We currently keep a record of `observedClients` which is really just a websocket connection counter. An identity based system would be more accurate (think multiple browser tabs) and a grace period would accomodate recovery after network hiccups.
+## How you handle stale inventory, price changes, or duplicate completion
+
+Once either client opens checkout it establishes a WebSocket connection and receives the latest snapshot. Subsequent events keep both surfaces synchronized, and revision checks prevent out-of-order updates from overwriting newer state.
+
+That realtime connection is **not** what guarantees a listing is only purchased once. A changed offer has its own version and must be accepted before purchase is allowed. The purchase path also rechecks the session state and hold expiration while the relevant resources are locked.
+
+Each client sends an idempotency key with its purchase request. Repeating the same request returns the existing pending, failed, or completed attempt instead of creating another one. The server also locks both the session and listing around the state transition, then re-reads and validates the current state before writing the attempt or order. Together, the idempotency record and locks are the actual duplicate-completion safeguards; WebSocket events just make the result visible quickly.
+
+## What tradeoffs you made and what you'd do differently with more time
+
+I combined these because most of the tradeoffs have a pretty direct “what I'd do next” attached to them.
+
+- Going all-in on AI gave me a lot of breadth quickly, but I lost some comfort with the codebase by generating too much in one pass. With more time I'd split the work into smaller vertical slices and get a tighter feedback loop going earlier. The later review did catch unnecessary pieces like Zustand and `better-result`; I'd rather apply that kind of steering after each slice.
+- The API uses an in-memory repository and process-local locks. That kept the prototype focused on checkout behavior, but it isn't a scaling story. In production I'd move the state and idempotency records into durable storage and enforce the critical transitions with transactional or conditional writes.
+- Instead of mocking auth I used the `resumeToken` handoff. It works for this prototype, but I wouldn't use one long-lived token for both access and sharing in production. I'd associate sessions with the signed-in user, let their other devices discover active checkouts, and generate a short-lived, one-time token for an explicit “share with a friend” flow.
+- WebSocket events currently send a full snapshot each time. At scale I'd probably use an initial snapshot followed by deltas, with hardened sequencing and reconnect behavior. That matters even more for Gametime's use case, where customers may already be dealing with congested networks and poor venue reception.
+- Presence is intentionally best-effort. The current observed-client and socket tracking is enough to avoid expiring a mobile checkout just because the web navigated away, but a production version should use identity-aware leases, handle multiple tabs correctly, and allow a grace period for brief network drops.
 
 ---
 
-# Original AI generated readme
+# Implementation reference
 
 Checkout continuity is a local prototype for starting a single-seat ticket
 checkout on the web and continuing the same session in an Expo iOS app. The API
